@@ -4,274 +4,260 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
 <title>L I G H T R U N N E R</title>
+<link rel="manifest" href="manifest.json">
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap');
-  body {
+
+  html, body {
     margin: 0;
+    padding: 0;
     overflow: hidden;
-    font-family: 'Share Tech Mono', monospace;
     background: black;
-    color: white;
+    height: 100%;
+    width: 100%;
   }
+
   canvas {
     display: block;
-    background: black;
+    margin: 0 auto;
+    background: linear-gradient(to bottom, #000 60%, #222);
+    touch-action: none;
   }
+
+  #overlay {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    color: cyan;
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 28px;
+    background: rgba(0,0,0,0.6);
+    text-align: center;
+  }
+
   #hud {
     position: absolute;
-    top: 10px;
-    left: 10px;
-    color: white;
+    top: 10px; left: 10px; right: 10px;
+    display: flex;
+    justify-content: space-between;
+    color: lime;
+    font-family: 'Share Tech Mono', monospace;
     font-size: 20px;
-    text-shadow: 2px 2px 4px black;
-    font-family: 'Share Tech Mono', monospace;
-  }
-  #centerMsg {
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    text-align: center;
-    color: white;
-    font-size: 30px;
-    text-shadow: 2px 2px 8px black;
-    font-family: 'Share Tech Mono', monospace;
-  }
-  button {
-    font-size: 20px;
-    padding: 10px 20px;
-    margin-top: 20px;
-    font-family: 'Share Tech Mono', monospace;
+    pointer-events: none;
   }
 </style>
 </head>
 <body>
-<canvas id="game"></canvas>
-<div id="hud"></div>
-<div id="centerMsg">
-  <h1>L I G H T R U N N E R</h1>
-  <button id="startBtn">Start Match</button>
+<canvas id="gameCanvas"></canvas>
+<div id="overlay">Swipe up or down to move.<br/>Tap to start</div>
+<div id="hud" style="display:none;">
+  <div id="score">Time: 0s</div>
+  <div id="storm">Storm: 60s</div>
+  <div id="players">Players: 100</div>
 </div>
+
 <script>
-const DPR = window.devicePixelRatio || 1;
-const canvas = document.getElementById("game");
+const canvas = document.getElementById("gameCanvas");
 const ctx = canvas.getContext("2d");
 const hud = document.getElementById("hud");
-const centerMsg = document.getElementById("centerMsg");
-const startBtn = document.getElementById("startBtn");
+const scoreEl = document.getElementById("score");
+const stormEl = document.getElementById("storm");
+const playersEl = document.getElementById("players");
 
-let WIDTH, HEIGHT;
+let W, H;
 function resize() {
-  WIDTH = window.innerWidth;
-  HEIGHT = window.innerHeight;
-  canvas.width = WIDTH * DPR;
-  canvas.height = HEIGHT * DPR;
-  canvas.style.width = WIDTH + "px";
-  canvas.style.height = HEIGHT + "px";
-  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  W = window.innerWidth;
+  H = window.innerHeight;
+  canvas.width = W;
+  canvas.height = H;
 }
 window.addEventListener("resize", resize);
 resize();
 
-let keys = {};
-window.addEventListener("keydown", e => { keys[e.key] = true; });
-window.addEventListener("keyup", e => { keys[e.key] = false; });
+// Game vars
+let player = { x: W*0.1, y: H/2, w: 40, h: 40, speed: 8 };
+let lanes = [H*0.3, H*0.5, H*0.7]; 
+let currentLane = 1;
+player.y = lanes[currentLane] - player.h/2;
 
-let touchX = null;
-let touchY = null;
+let obstacles = [];
+let powerups = [];
+let scrollY = 0;
+let gameOver = false;
+let started = false;
+let startTime = 0;
+let stormTime = 60; 
+let playersLeft = 100;
+let lastSpawn = 0;
+let lastPower = 0;
+let difficulty = 1;
+let shield = false;
+
+// Input
+let touchStartY = null;
 canvas.addEventListener("touchstart", e => {
-  if (!running) return;
-  const touch = e.touches[0];
-  touchX = touch.clientX;
-  touchY = touch.clientY;
-  e.preventDefault();
-});
-canvas.addEventListener("touchmove", e => {
-  if (!running) return;
-  const touch = e.touches[0];
-  const dx = touch.clientX - touchX;
-  const dy = touch.clientY - touchY;
-  player.x += dx;
-  player.y += dy;
-  touchX = touch.clientX;
-  touchY = touch.clientY;
-  e.preventDefault();
+  if (!started) {
+    started = true;
+    document.getElementById("overlay").style.display = "none";
+    hud.style.display = "flex";
+    resetGame();
+    return;
+  }
+  if (gameOver) {
+    resetGame();
+    return;
+  }
+  touchStartY = e.touches[0].clientY;
 });
 canvas.addEventListener("touchend", e => {
-  touchX = null;
-  touchY = null;
-  e.preventDefault();
+  if (!touchStartY) return;
+  let dy = e.changedTouches[0].clientY - touchStartY;
+  if (dy < -30 && currentLane > 0) currentLane--; 
+  if (dy > 30 && currentLane < lanes.length-1) currentLane++;
+  player.y = lanes[currentLane] - player.h/2;
+  touchStartY = null;
 });
 
-function rand(n) { return Math.random() * n; }
-function randBetween(a,b) { return a + Math.random()*(b-a); }
-function choose(arr) { return arr[Math.floor(Math.random()*arr.length)]; }
-
-const COLORS = ["cyan","magenta","yellow","lime","orange","white","red"];
-const ENEMY_COLORS = ["red","orange","magenta"];
-const SHOT_COLORS = ["white","cyan","yellow"];
-
-class Entity {
-  constructor(x,y,r,color) {
-    this.x = x;
-    this.y = y;
-    this.r = r;
-    this.color = color;
-  }
-  draw() {
-    ctx.fillStyle = this.color;
-    ctx.beginPath();
-    ctx.arc(this.x,this.y,this.r,0,Math.PI*2);
-    ctx.fill();
-  }
+// Reset
+function resetGame() {
+  obstacles = [];
+  powerups = [];
+  currentLane = 1;
+  player.y = lanes[currentLane] - player.h/2;
+  gameOver = false;
+  lastSpawn = 0;
+  lastPower = 0;
+  difficulty = 1;
+  shield = false;
+  startTime = performance.now();
+  stormTime = 60;
+  playersLeft = 100;
+  loop();
 }
 
-class Player extends Entity {
-  constructor(x,y) {
-    super(x,y,15,"cyan");
-    this.vx=0; this.vy=0;
-    this.speed=4;
-    this.score=0;
-    this.ammo=3;
-  }
-  update() {
-    if(keys["ArrowUp"]||keys["w"]) this.vy=-this.speed;
-    else if(keys["ArrowDown"]||keys["s"]) this.vy=this.speed;
-    else this.vy=0;
-    if(keys["ArrowLeft"]||keys["a"]) this.vx=-this.speed;
-    else if(keys["ArrowRight"]||keys["d"]) this.vx=this.speed;
-    else this.vx=0;
-    this.x+=this.vx;
-    this.y+=this.vy;
-    this.x=Math.max(this.r,Math.min(WIDTH-this.r,this.x));
-    this.y=Math.max(this.r,Math.min(HEIGHT-this.r,this.y));
-    if((keys[" "]||keys["Spacebar"]) && this.ammo>0) {
-      shoot();
-      this.ammo--;
-      keys[" "]=false;
-      keys["Spacebar"]=false;
-    }
-  }
+// Spawners
+function spawnObstacle() {
+  let lane = Math.floor(Math.random()*lanes.length);
+  obstacles.push({
+    x: W+50,
+    y: lanes[lane]-20,
+    w: 40,
+    h: 40
+  });
+}
+function spawnPowerup() {
+  let lane = Math.floor(Math.random()*lanes.length);
+  powerups.push({
+    x: W+50,
+    y: lanes[lane]-20,
+    w: 30,
+    h: 30,
+    type: Math.random()<0.5?"shield":"slow"
+  });
 }
 
-class Enemy extends Entity {
-  constructor(x,y) {
-    super(x,y,15,choose(ENEMY_COLORS));
-    this.speed=randBetween(1,2);
-    this.angle=rand(Math.PI*2);
-  }
-  update() {
-    this.x+=Math.cos(this.angle)*this.speed;
-    this.y+=Math.sin(this.angle)*this.speed;
-    if(this.x<this.r||this.x>WIDTH-this.r) this.angle=Math.PI-this.angle;
-    if(this.y<this.r||this.y>HEIGHT-this.r) this.angle=-this.angle;
-  }
+// HUD update
+function updateHUD(elapsed) {
+  scoreEl.textContent = `Time: ${Math.floor(elapsed/1000)}s`;
+  stormEl.textContent = `Storm: ${Math.max(0,stormTime)}s`;
+  playersEl.textContent = `Players: ${playersLeft}`;
 }
 
-class Shot extends Entity {
-  constructor(x,y,angle) {
-    super(x,y,5,choose(SHOT_COLORS));
-    this.vx=Math.cos(angle)*6;
-    this.vy=Math.sin(angle)*6;
-  }
-  update() { this.x+=this.vx; this.y+=this.vy; }
-}
-
-class Pickup extends Entity {
-  constructor(x,y,type) {
-    super(x,y,10,type==="ammo"?"yellow":"lime");
-    this.type=type;
-  }
-}
-
-let player=null;
-let enemies=[];
-let shots=[];
-let pickups=[];
-let running=false;
-let lastSpawn=0;
-
-// --- START GAME FUNCTION (NEW) ---
-function startGame(name="Runner", color=choose(COLORS)) {
-  centerMsg.style.display="none";
-  spawnWorld(name, color);
-}
-
-function spawnWorld(name,color) {
-  player=new Player(WIDTH/2,HEIGHT/2);
-  player.color=color;
-  enemies=[];
-  shots=[];
-  pickups=[];
-  running=true;
-  lastSpawn=0;
-  loop(0);
-}
-
-function shoot() {
-  const angle=Math.atan2(0,-1);
-  shots.push(new Shot(player.x,player.y-20,angle));
-}
-
+// Loop
 function loop(ts) {
-  if(!running) return;
-  ctx.fillStyle="black";
-  ctx.fillRect(0,0,WIDTH,HEIGHT);
-  if(ts-lastSpawn>2000) {
-    enemies.push(new Enemy(rand(WIDTH),rand(HEIGHT)));
-    lastSpawn=ts;
+  if (gameOver) return;
+
+  let elapsed = ts - startTime;
+
+  ctx.clearRect(0,0,W,H);
+
+  // Background scroll
+  scrollY += 5;
+  ctx.fillStyle = "cyan";
+  for (let i=0; i<20; i++) {
+    let y = (i*H/20 + scrollY) % H;
+    ctx.fillRect(W/2-2, y, 4, 20);
   }
-  for(let e of enemies) e.update();
-  for(let s of shots) s.update();
-  for(let p of pickups) {
-    // pickups float
-  }
-  player.update();
-  shots=shots.filter(s=>s.x>-20&&s.x<WIDTH+20&&s.y>-20&&s.y<HEIGHT+20);
-  for(let s of shots) {
-    for(let i=enemies.length-1;i>=0;i--) {
-      const e=enemies[i];
-      if(Math.hypot(e.x-s.x,e.y-s.y)<e.r+s.r) {
-        enemies.splice(i,1);
-        player.score+=10;
-        pickups.push(new Pickup(e.x,e.y,Math.random()<0.5?"ammo":"score"));
+
+  // Player
+  ctx.fillStyle = shield ? "aqua" : "lime";
+  ctx.fillRect(player.x, player.y, player.w, player.h);
+
+  // Obstacles
+  if (Math.random() < 0.02*difficulty) spawnObstacle();
+  ctx.fillStyle = "red";
+  obstacles.forEach(o => {
+    o.x -= 6*difficulty;
+    ctx.fillRect(o.x,o.y,o.w,o.h);
+  });
+
+  // Powerups
+  if (Math.random() < 0.003) spawnPowerup();
+  ctx.fillStyle = "yellow";
+  powerups.forEach(p => {
+    p.x -= 5;
+    ctx.fillRect(p.x,p.y,p.w,p.h);
+  });
+
+  // Collision
+  obstacles.forEach(o => {
+    if (player.x < o.x+o.w &&
+        player.x+player.w > o.x &&
+        player.y < o.y+o.h &&
+        player.y+player.h > o.y) {
+      if (shield) {
+        shield = false;
+        o.x = -100; 
+      } else {
+        endGame();
       }
     }
-  }
-  for(let i=pickups.length-1;i>=0;i--) {
-    const p=pickups[i];
-    if(Math.hypot(p.x-player.x,p.y-player.y)<p.r+player.r) {
-      if(p.type==="ammo") player.ammo+=3;
-      else player.score+=5;
-      pickups.splice(i,1);
+  });
+  powerups.forEach(p => {
+    if (player.x < p.x+p.w &&
+        player.x+player.w > p.x &&
+        player.y < p.y+p.h &&
+        player.y+player.h > p.y) {
+      if (p.type==="shield") shield = true;
+      else difficulty *= 0.8;
+      p.x = -100;
     }
-  }
-  for(let e of enemies) {
-    if(Math.hypot(e.x-player.x,e.y-player.y)<e.r+player.r) {
-      gameOver();
-      return;
-    }
-  }
-  for(let e of enemies) e.draw();
-  for(let s of shots) s.draw();
-  for(let p of pickups) p.draw();
-  player.draw();
-  hud.innerText=`Score: ${player.score} Ammo: ${player.ammo}`;
-  requestAnimationFrame(loop);
+  });
+
+  // Remove off-screen
+  obstacles = obstacles.filter(o => o.x>-50);
+  powerups = powerups.filter(p => p.x>-50);
+
+  // Storm + players
+  if (elapsed % 1000 < 20 && stormTime>0) stormTime--;
+  if (elapsed % 1500 < 20 && playersLeft>1) playersLeft--;
+
+  // Difficulty scaling
+  if (elapsed>20000) difficulty = 1.5;
+  if (elapsed>40000) difficulty = 2;
+
+  // HUD
+  updateHUD(elapsed);
+
+  if (!gameOver) requestAnimationFrame(loop);
 }
 
-function gameOver() {
-  running=false;
-  centerMsg.style.display="block";
-  centerMsg.innerHTML=`<h1>Game Over</h1><p>Score: ${player.score}</p><button id="restartBtn">Restart</button>`;
-  document.getElementById("restartBtn").onclick=()=>startGame();
+// End game
+function endGame() {
+  gameOver = true;
+  let survival = parseInt(scoreEl.textContent.replace(/\D/g,""));
+  let best = localStorage.getItem("best")||0;
+  if (survival > best) {
+    localStorage.setItem("best",survival);
+    best = survival;
+  }
+  document.getElementById("overlay").innerText = `GAME OVER\nTime: ${survival}s\nBest: ${best}s\nTap to restart`;
+  document.getElementById("overlay").style.display = "flex";
+  hud.style.display = "none";
 }
-
-startBtn.addEventListener("click",()=>startGame());
-
-window.addEventListener("keydown",e=>{
-  if(e.key==="r"||e.key==="R") startGame();
-});
 </script>
 </body>
 </html>
