@@ -3,136 +3,215 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>LightRunner Minimal</title>
+<title>Mini Temple Run with Discs</title>
 <style>
-  html, body { margin:0; padding:0; overflow:hidden; background:#000; }
-  canvas { display:block; background:#000; }
+  body {
+    margin: 0;
+    overflow: hidden;
+    background-color: #87CEEB; /* Sky */
+  }
+  canvas {
+    display: block;
+  }
 </style>
 </head>
 <body>
-<canvas id="game"></canvas>
+<canvas id="gameCanvas"></canvas>
 <script>
-const canvas = document.getElementById('game');
+const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
 
-let vw, vh;
-function resize() { vw = canvas.width = window.innerWidth; vh = canvas.height = window.innerHeight; }
-window.addEventListener('resize', resize);
-resize();
+canvas.width = window.innerWidth;
+canvas.height = window.innerHeight;
 
-// CONFIG
-const CELL = 10;
-const SPEED = 8; // cells per second
-const NUM_PLAYERS = 5; // start small for testing
+const laneCount = 3;
+const laneWidth = canvas.width / laneCount;
+let player = { lane: 1, width: 50, height: 50, y: canvas.height * 0.8, color: 'red', discs: 0 };
 
-// GAME STATE
-let gridW = 100;
-let gridH = 60;
-let occupancy = Array(gridW).fill(0).map(()=>Array(gridH).fill(0));
-let players = [];
-let localPlayer;
+let obstacles = [];
+let discsOnGround = [];
+let flyingDiscs = [];
+let obstacleSpeed = 6;
+let discSpeed = 15;
+let score = 0;
+let gameOver = false;
 
-// UTIL
-function rnd(a,b){return Math.random()*(b-a)+a;}
-function cellToPx(c,r){return {x:c*CELL + CELL/2, y:r*CELL + CELL/2};}
-function pxToCell(x,y){return {c:Math.floor(x/CELL), r:Math.floor(y/CELL)};}
-function dist(a,b){return Math.hypot(a.x-b.x,a.y-b.y);}
-
-// CREATE PLAYERS
-function createPlayer(id, human=false){
-  let c = Math.floor(rnd(0, gridW));
-  let r = Math.floor(rnd(0, gridH));
-  let dirs = [{x:1,y:0},{x:-1,y:0},{x:0,y:1},{x:0,y:-1}];
-  let dir = dirs[Math.floor(Math.random()*dirs.length)];
-  return {id, pos:{x:c*CELL, y:r*CELL}, dir, trail:[], alive:true, human};
+function createObstacle() {
+  const lane = Math.floor(Math.random() * laneCount);
+  obstacles.push({ lane, width: 50, height: 50, y: -50, color: 'green' });
 }
 
-// INIT
-for(let i=0;i<NUM_PLAYERS;i++){
-  let p = createPlayer(i+1, i===0);
-  players.push(p);
-  if(p.human) localPlayer = p;
+function createDisc() {
+  const lane = Math.floor(Math.random() * laneCount);
+  discsOnGround.push({ lane, width: 30, height: 10, y: -30, color: 'gold' });
 }
 
-// INPUT
-function steer(player,left){
-  if(!player.alive) return;
-  let {x,y}=player.dir;
-  player.dir = left ? {x:-y,y:x} : {x:y,y:-x};
+function drawGround() {
+  ctx.fillStyle = '#228B22';
+  ctx.fillRect(0, canvas.height * 0.8 + player.height, canvas.width, canvas.height - (canvas.height * 0.8 + player.height));
 }
 
-canvas.addEventListener('mousedown', e=>{
-  if(e.clientX < vw/2) steer(localPlayer,true);
-  else steer(localPlayer,false);
-});
-canvas.addEventListener('touchstart', e=>{
-  let t = e.touches[0];
-  if(t.clientX < vw/2) steer(localPlayer,true);
-  else steer(localPlayer,false);
-});
-
-// AI simple turn
-function aiTurn(p){
-  if(!p.alive || p.human) return;
-  if(Math.random()<0.05) {
-    steer(p,Math.random()<0.5);
-  }
+function drawPlayer() {
+  const x = player.lane * laneWidth + (laneWidth - player.width) / 2;
+  ctx.fillStyle = player.color;
+  ctx.fillRect(x, player.y, player.width, player.height);
 }
 
-// GAME LOOP
-let last = 0;
-function loop(ts){
-  if(!last) last=ts;
-  let dt = (ts-last)/1000;
-  last=ts;
+function drawObstacles() {
+  obstacles.forEach(obs => {
+    const x = obs.lane * laneWidth + (laneWidth - obs.width) / 2;
+    ctx.fillStyle = obs.color;
+    ctx.fillRect(x, obs.y, obs.width, obs.height);
+  });
+}
 
-  ctx.clearRect(0,0,vw,vh);
+function drawDiscsOnGround() {
+  discsOnGround.forEach(d => {
+    const x = d.lane * laneWidth + (laneWidth - d.width) / 2;
+    ctx.fillStyle = d.color;
+    ctx.fillRect(x, d.y, d.width, d.height);
+  });
+}
 
-  // update players
-  for(let p of players){
-    if(!p.alive) continue;
-    if(!p.human) aiTurn(p);
-    // move
-    p.pos.x += p.dir.x*SPEED*CELL*dt;
-    p.pos.y += p.dir.y*SPEED*CELL*dt;
-
-    // check collision with walls
-    let c = Math.floor(p.pos.x/CELL);
-    let r = Math.floor(p.pos.y/CELL);
-    if(c<0||c>=gridW||r<0||r>=gridH||occupancy[c][r]){
-      p.alive=false;
-      continue;
-    }
-    occupancy[c][r]=p.id;
-    p.trail.push({x:p.pos.x,y:p.pos.y});
-  }
-
-  // CAMERA
-  let camX = localPlayer.pos.x - vw/2;
-  let camY = localPlayer.pos.y - vh/2;
-
-  // DRAW
-  for(let p of players){
-    ctx.strokeStyle = p.human?'#0FF':'#F00';
+function drawFlyingDiscs() {
+  flyingDiscs.forEach(d => {
+    ctx.fillStyle = 'orange';
     ctx.beginPath();
-    for(let i=0;i<p.trail.length;i++){
-      let t=p.trail[i];
-      if(i===0) ctx.moveTo(t.x-camX,t.y-camY);
-      else ctx.lineTo(t.x-camX,t.y-camY);
-    }
-    ctx.stroke();
-    if(p.alive){
-      ctx.fillStyle=p.human?'#0FF':'#F00';
-      ctx.beginPath();
-      ctx.arc(p.pos.x-camX,p.pos.y-camY,CELL/2,0,Math.PI*2);
-      ctx.fill();
+    ctx.arc(d.x, d.y, 15, 0, Math.PI * 2);
+    ctx.fill();
+  });
+}
+
+function updateObstacles() {
+  obstacles.forEach(obs => obs.y += obstacleSpeed);
+  obstacles = obstacles.filter(obs => obs.y < canvas.height);
+}
+
+function updateDiscs() {
+  discsOnGround.forEach(d => d.y += obstacleSpeed);
+  discsOnGround = discsOnGround.filter(d => d.y < canvas.height);
+
+  flyingDiscs.forEach(d => {
+    d.y -= discSpeed;
+    // check collision with obstacles
+    obstacles = obstacles.filter(obs => {
+      const obsX = obs.lane * laneWidth + (laneWidth - obs.width) / 2;
+      const obsY = obs.y;
+      const obsW = obs.width;
+      const obsH = obs.height;
+
+      if (d.x > obsX && d.x < obsX + obsW && d.y > obsY && d.y < obsY + obsH) {
+        return false; // destroy obstacle
+      }
+      return true;
+    });
+  });
+  flyingDiscs = flyingDiscs.filter(d => d.y > 0);
+}
+
+function checkCollision() {
+  const playerX = player.lane * laneWidth + (laneWidth - player.width) / 2;
+  const playerY = player.y;
+  const playerW = player.width;
+  const playerH = player.height;
+
+  // Check collision with obstacles
+  for (let obs of obstacles) {
+    const obsX = obs.lane * laneWidth + (laneWidth - obs.width) / 2;
+    const obsY = obs.y;
+    const obsW = obs.width;
+    const obsH = obs.height;
+
+    if (
+      playerX < obsX + obsW &&
+      playerX + playerW > obsX &&
+      playerY < obsY + obsH &&
+      playerY + playerH > obsY
+    ) {
+      gameOver = true;
     }
   }
 
-  requestAnimationFrame(loop);
+  // Check collision with discs
+  discsOnGround = discsOnGround.filter(d => {
+    const discX = d.lane * laneWidth + (laneWidth - d.width) / 2;
+    const discY = d.y;
+    const discW = d.width;
+    const discH = d.height;
+
+    if (
+      playerX < discX + discW &&
+      playerX + playerW > discX &&
+      playerY < discY + discH &&
+      playerY + playerH > discY
+    ) {
+      player.discs++;
+      return false;
+    }
+    return true;
+  });
 }
 
-requestAnimationFrame(loop);
+function drawScore() {
+  ctx.fillStyle = 'white';
+  ctx.font = '24px Arial';
+  ctx.fillText('Score: ' + score + '  |  Discs: ' + player.discs, 20, 40);
+}
+
+function gameLoop() {
+  if (gameOver) {
+    ctx.fillStyle = 'white';
+    ctx.font = '48px Arial';
+    ctx.fillText('GAME OVER', canvas.width / 2 - 150, canvas.height / 2);
+    ctx.fillText('Score: ' + score, canvas.width / 2 - 80, canvas.height / 2 + 60);
+    return;
+  }
+
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  drawGround();
+  drawPlayer();
+  drawObstacles();
+  drawDiscsOnGround();
+  drawFlyingDiscs();
+  drawScore();
+
+  updateObstacles();
+  updateDiscs();
+  checkCollision();
+
+  if (Math.random() < 0.02) createObstacle();
+  if (Math.random() < 0.005) createDisc();
+
+  score++;
+  requestAnimationFrame(gameLoop);
+}
+
+// Tap to move left/right
+canvas.addEventListener('click', (e) => {
+  const clickX = e.clientX;
+  if (clickX < canvas.width / 2 && player.lane > 0) {
+    player.lane--;
+  } else if (clickX >= canvas.width / 2 && player.lane < laneCount - 1) {
+    player.lane++;
+  }
+});
+
+// Double-tap to throw a disc
+let lastTap = 0;
+canvas.addEventListener('click', (e) => {
+  const now = Date.now();
+  const delta = now - lastTap;
+  if (delta < 300 && player.discs > 0) {
+    // throw disc from player's lane
+    const discX = player.lane * laneWidth + laneWidth / 2;
+    const discY = player.y;
+    flyingDiscs.push({ x: discX, y: discY });
+    player.discs--;
+  }
+  lastTap = now;
+});
+
+gameLoop();
 </script>
 </body>
 </html>
