@@ -6,212 +6,621 @@
 <title>L I G H T R U N N E R</title>
 <link rel="manifest" href="manifest.json">
 <style>
-  @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap');
-
-  html, body {
-    margin: 0;
-    padding: 0;
-    overflow: hidden;
-    background: black;
-    height: 100%;
-    width: 100%;
-    font-family: 'Share Tech Mono', monospace;
-    color: cyan;
-  }
-
-  canvas {
-    display: none;
-    background: linear-gradient(to bottom, #000 60%, #222);
-    touch-action: none;
-  }
-
-  #menu {
-    position: absolute;
-    top: 0; left: 0;
-    width: 100%; height: 100%;
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    align-items: center;
-    background: black;
-    text-align: center;
-  }
-
-  #title {
-    font-size: 42px;
-    animation: float 2s ease-in-out infinite;
-    margin-bottom: 30px;
-  }
-
-  @keyframes float {
-    0%, 100% { transform: translateY(0); }
-    50% { transform: translateY(-10px); }
-  }
-
-  #menu input, #menu button {
-    margin: 10px;
-    padding: 10px;
-    background: #111;
-    border: 1px solid cyan;
-    color: cyan;
-    font-size: 18px;
-  }
-
-  .color-select {
-    display: flex;
-    gap: 10px;
-    margin: 15px 0;
-  }
-
-  .color-box {
-    width: 30px;
-    height: 30px;
-    border: 2px solid white;
-    cursor: pointer;
-  }
-
-  #overlay {
-    position: absolute;
-    top: 0; left: 0;
-    width: 100%; height: 100%;
-    display: none;
-    justify-content: center;
-    align-items: center;
-    color: cyan;
-    font-size: 28px;
-    background: rgba(0,0,0,0.6);
-    text-align: center;
-  }
+@import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap');
+html, body {
+margin: 0;
+padding: 0;
+overflow: hidden;
+background: black;
+height: 100%;
+width: 100%;
+font-family: 'Share Tech Mono', monospace;
+color: cyan;
+touch-action: none;
+}
+canvas {
+display: none;
+background: #000;
+touch-action: none;
+}
+#menu {
+position: absolute;
+top: 0; left: 0;
+width: 100%; height: 100%;
+display: flex;
+flex-direction: column;
+justify-content: center;
+align-items: center;
+background: black;
+text-align: center;
+}
+#title {
+font-size: 42px;
+animation: float 2s ease-in-out infinite;
+margin-bottom: 30px;
+}
+@keyframes float {
+0%, 100% { transform: translateY(0); }
+50% { transform: translateY(-10px); }
+}
+#menu input, #menu button {
+margin: 10px;
+padding: 10px;
+background: #111;
+border: 1px solid cyan;
+color: cyan;
+font-size: 18px;
+font-family: 'Share Tech Mono', monospace;
+cursor: pointer;
+}
+.color-select {
+display: flex;
+gap: 10px;
+margin: 15px 0;
+}
+.color-box {
+width: 30px;
+height: 30px;
+border: 2px solid white;
+cursor: pointer;
+}
+#overlay {
+position: absolute;
+top: 0; left: 0;
+width: 100%; height: 100%;
+display: none;
+flex-direction: column;
+justify-content: center;
+align-items: center;
+color: cyan;
+font-size: 28px;
+background: rgba(0,0,0,0.8);
+text-align: center;
+}
+#timer {
+position: absolute;
+top: 15px;
+right: 15px;
+font-size: 24px;
+z-index: 10;
+}
+#ammo-display {
+position: absolute;
+top: 15px;
+left: 15px;
+font-size: 24px;
+z-index: 10;
+}
 </style>
 </head>
 <body>
 <div id="menu">
-  <div id="title">L I G H T R U N N E R</div>
-  <input id="playerName" type="text" placeholder="Enter Name">
-  <div class="color-select">
-    <div class="color-box" style="background:red" data-color="red"></div>
-    <div class="color-box" style="background:lime" data-color="lime"></div>
-    <div class="color-box" style="background:cyan" data-color="cyan"></div>
-    <div class="color-box" style="background:yellow" data-color="yellow"></div>
-  </div>
-  <button id="playBtn">PLAY</button>
+<div id="title">L I G H T R U N N E R</div>
+<input id="playerName" type="text" placeholder="Enter Name (Optional)">
+<div class="color-select">
+<div class="color-box" style="background:red" data-color="red"></div>
+<div class="color-box" style="background:lime" data-color="lime"></div>
+<div class="color-box" style="background:cyan" data-color="cyan"></div>
+<div class="color-box" style="background:yellow" data-color="yellow"></div>
+<div class="color-box" style="background:magenta" data-color="magenta"></div>
 </div>
-
+<button id="playBtn">PLAY</button>
+</div>
 <canvas id="gameCanvas"></canvas>
-<div id="overlay">GAME OVER<br/>Tap to restart</div>
-
+<div id="overlay"></div>
+<div id="timer"></div>
+<div id="ammo-display"></div>
 <script>
 const canvas = document.getElementById("gameCanvas");
 const ctx = canvas.getContext("2d");
 const overlay = document.getElementById("overlay");
 const menu = document.getElementById("menu");
 const playBtn = document.getElementById("playBtn");
+const timerDisplay = document.getElementById("timer");
+const ammoDisplay = document.getElementById("ammo-display");
 const nameInput = document.getElementById("playerName");
 
 let W, H;
 function resize() {
-  W = window.innerWidth;
-  H = window.innerHeight;
-  canvas.width = W;
-  canvas.height = H;
+W = window.innerWidth;
+H = window.innerHeight;
+canvas.width = W;
+canvas.height = H;
+// Adjust game-specific scale
+gameScale = Math.min(W, H) * 0.4;
+arenaRadius = gameScale * 1.5;
+center = {x: W/2, y: H/2};
 }
 window.addEventListener("resize", resize);
 resize();
 
-// --- GAME VARS ---
-let player = { x: 0, y: 0, w: 40, h: 40, color: "lime" };
-let lanes = [];
-let currentLane = 1;
-let obstacles = [];
-let scrollY = 0;
+// --- GAME CONFIG ---
+const TILT_ANGLE = Math.PI / 4; // 45 degrees for isometric view
+const BIKE_SPEED = 2.5;
+const BOT_SPEED = 2.5;
+const TRAIL_LENGTH = 1500;
+const DISC_SPEED = 10;
+const BOTS_COUNT = 20;
+
+let gameScale;
+let arenaRadius;
+let center;
+let player, bots, trails, discs, stormRadius, stormState, stormTimer, gameTimer;
 let gameOver = false;
-let started = false;
+let gameActive = false;
+let countdown = 3;
+let lastUpdate = 0;
+let lastShrink = 0;
+let shrinkCycle = 0;
+
+// --- UTILITY FUNCTIONS ---
+function toScreen(x, y) {
+const isoX = x * Math.cos(TILT_ANGLE) - y * Math.cos(TILT_ANGLE);
+const isoY = y * Math.sin(TILT_ANGLE) + x * Math.sin(TILT_ANGLE);
+return {
+x: center.x + isoX,
+y: center.y - isoY
+};
+}
+
+function normalizeAngle(angle) {
+return angle % (2 * Math.PI);
+}
+
+// --- GAME OBJECTS ---
+class Bike {
+constructor(color, isPlayer = false, name = "Bot") {
+this.x = (Math.random() - 0.5) * arenaRadius * 1.5;
+this.y = (Math.random() - 0.5) * arenaRadius * 1.5;
+this.dir = Math.random() * 2 * Math.PI;
+this.color = color;
+this.isPlayer = isPlayer;
+this.trail = [];
+this.alive = true;
+this.turnDir = 0; // -1 for left, 1 for right, 0 for none
+this.discAmmo = 0;
+this.name = name;
+this.lastPos = {x: this.x, y: this.y};
+this.brain = new BotBrain();
+}
+
+update(delta) {
+if (!this.alive) return;
+
+// Keep track of last position for trail
+this.lastPos = {x: this.x, y: this.y};
+
+// Turning
+if (this.isPlayer) {
+this.dir += this.turnDir * 0.05;
+} else {
+this.brain.decideTurn(this, bots, trails, arenaRadius);
+this.dir += this.turnDir * 0.05;
+}
+this.dir = normalizeAngle(this.dir);
+
+// Movement
+const speed = this.isPlayer ? BIKE_SPEED : BOT_SPEED;
+this.x += Math.cos(this.dir) * speed;
+this.y += Math.sin(this.dir) * speed;
+
+// Add new trail segment
+this.trail.push({ x: this.lastPos.x, y: this.lastPos.y });
+if (this.trail.length > TRAIL_LENGTH) {
+this.trail.shift();
+}
+}
+
+draw() {
+if (!this.alive) return;
+const pos = toScreen(this.x, this.y);
+// Draw bike
+ctx.fillStyle = this.color;
+const bikeSize = gameScale * 0.08;
+// Draw bike as a tilted rectangle
+ctx.save();
+ctx.translate(pos.x, pos.y);
+ctx.rotate(-this.dir);
+ctx.fillRect(-bikeSize/2, -bikeSize/4, bikeSize, bikeSize/2);
+ctx.restore();
+// Draw trail
+ctx.strokeStyle = this.color;
+ctx.lineWidth = gameScale * 0.05;
+ctx.beginPath();
+let lastScreenPos = toScreen(this.trail[0]?.x, this.trail[0]?.y);
+ctx.moveTo(lastScreenPos.x, lastScreenPos.y);
+for(let i=1; i<this.trail.length; i++) {
+const p = this.trail[i];
+const screenP = toScreen(p.x, p.y);
+ctx.lineTo(screenP.x, screenP.y);
+}
+ctx.stroke();
+}
+}
+
+class LightDisc {
+constructor(x, y) {
+this.x = x;
+this.y = y;
+}
+draw() {
+const pos = toScreen(this.x, this.y);
+const radius = gameScale * 0.05;
+// Glowing effect
+ctx.save();
+ctx.shadowBlur = 20;
+ctx.shadowColor = 'cyan';
+ctx.strokeStyle = 'white';
+ctx.lineWidth = 4;
+ctx.beginPath();
+ctx.ellipse(pos.x, pos.y, radius, radius/2, TILT_ANGLE, 0, 2 * Math.PI);
+ctx.stroke();
+ctx.restore();
+}
+}
+
+class FiredDisc {
+constructor(x, y, dir, color) {
+this.x = x;
+this.y = y;
+this.dir = dir;
+this.color = color;
+this.alive = true;
+this.life = 200; // Time before it disappears
+}
+update() {
+this.x += Math.cos(this.dir) * DISC_SPEED;
+this.y += Math.sin(this.dir) * DISC_SPEED;
+this.life--;
+if (this.life <= 0) this.alive = false;
+}
+draw() {
+const pos = toScreen(this.x, this.y);
+const radius = gameScale * 0.04;
+// Draw as a solid, glowing circle
+ctx.save();
+ctx.shadowBlur = 15;
+ctx.shadowColor = this.color;
+ctx.fillStyle = this.color;
+ctx.beginPath();
+ctx.arc(pos.x, pos.y, radius, 0, 2 * Math.PI);
+ctx.fill();
+ctx.restore();
+}
+}
+
+class BotBrain {
+constructor() {
+this.state = 'wander';
+this.targetDir = 0;
+this.changeDirTimer = 0;
+}
+decideTurn(bot, bots, trails, arenaRadius) {
+const distFromCenter = Math.sqrt(bot.x * bot.x + bot.y * bot.y);
+const maxDist = arenaRadius * 0.9;
+if (distFromCenter > maxDist) {
+// Steer back towards center
+const angleToCenter = Math.atan2(-bot.y, -bot.x);
+const angleDiff = normalizeAngle(angleToCenter - bot.dir);
+if (angleDiff > Math.PI) {
+bot.turnDir = 1; // Turn right
+} else {
+bot.turnDir = -1; // Turn left
+}
+return;
+}
+// Collision avoidance
+for (const other of bots.filter(b => b.alive)) {
+if (other === bot) continue;
+const dx = other.x - bot.x;
+const dy = other.y - bot.y;
+const dist = Math.sqrt(dx * dx + dy * dy);
+if (dist < 50) { // If too close to another bot
+const angleToOther = Math.atan2(dy, dx);
+const angleDiff = normalizeAngle(angleToOther - bot.dir);
+if (angleDiff < Math.PI) {
+bot.turnDir = 1;
+} else {
+bot.turnDir = -1;
+}
+return;
+}
+}
+// Trail avoidance - a simple check
+for (const trail of trails) {
+for (const segment of trail.points) {
+const dist = Math.sqrt(Math.pow(segment.x - bot.x, 2) + Math.pow(segment.y - bot.y, 2));
+if (dist < 40) {
+const angleToTrail = Math.atan2(segment.y - bot.y, segment.x - bot.x);
+const angleDiff = normalizeAngle(angleToTrail - bot.dir);
+if (angleDiff < Math.PI) {
+bot.turnDir = 1;
+} else {
+bot.turnDir = -1;
+}
+return;
+}
+}
+}
+// Wander
+this.changeDirTimer--;
+if (this.changeDirTimer <= 0) {
+this.targetDir = (Math.random() - 0.5) * 2; // -1 to 1
+this.changeDirTimer = Math.random() * 60 + 30; // 30-90 frames
+}
+bot.turnDir = this.targetDir;
+}
+}
+
+// --- GAME STATE MANAGEMENT ---
+function startGame() {
+menu.style.display = "none";
+canvas.style.display = "block";
+overlay.style.display = "none";
+timerDisplay.style.display = "block";
+ammoDisplay.style.display = "block";
+
+const playerColor = document.querySelector(".color-box[data-color].active")?.dataset.color || "cyan";
+const playerName = nameInput.value || "Player";
+const botColors = ["red", "lime", "cyan", "yellow", "magenta"].filter(c => c !== playerColor);
+const botNames = ["Tron", "CLU", "Quorra", "Rinzler", "Sark", "Yori", "Flynn", "Alan One", "Dumont", "Ram", "Bit", "MCP", "Dillinger", "Kevin", "Data", "Binary", "Hex", "Byte", "Zuse", "Gem"].sort(() => Math.random() - 0.5);
+
+player = new Bike(playerColor, true, playerName);
+bots = [];
+for (let i = 0; i < BOTS_COUNT; i++) {
+bots.push(new Bike(botColors[i % botColors.length], false, botNames[i % botNames.length]));
+}
+trails = [];
+discs = [];
+firedDiscs = [];
+
+stormRadius = arenaRadius * 2;
+stormState = 'holding';
+stormTimer = 20;
+shrinkCycle = 0;
+
+gameOver = false;
+gameActive = false;
+countdown = 3;
+loop();
+}
+
+function update(delta) {
+if (!gameActive) return;
+
+// Update game objects
+const allBikes = [player, ...bots];
+allBikes.forEach(bike => bike.update(delta));
+firedDiscs.forEach(disc => disc.update());
+
+// Spawn light discs
+if (Math.random() < 0.005) {
+discs.push(new LightDisc(
+(Math.random() - 0.5) * (stormRadius - 50),
+(Math.random() - 0.5) * (stormRadius - 50)
+));
+}
+
+// Collisions & Eliminations
+// Bike vs Trail
+allBikes.forEach(b1 => {
+if (!b1.alive) return;
+// Check against ALL trails
+for (const b2 of allBikes) {
+if (!b2.alive) continue;
+for (const segment of b2.trail) {
+const dx = b1.x - segment.x;
+const dy = b1.y - segment.y;
+const dist = Math.sqrt(dx * dx + dy * dy);
+if (dist < 5) {
+b1.alive = false;
+}
+}
+}
+});
+// Bike vs Storm Wall
+allBikes.forEach(bike => {
+if (!bike.alive) return;
+const dist = Math.sqrt(bike.x * bike.x + bike.y * bike.y);
+if (dist > stormRadius) {
+bike.alive = false;
+}
+});
+// Bike vs Disc
+discs.forEach((d, i) => {
+if (!player.alive) return;
+const dist = Math.sqrt(Math.pow(player.x - d.x, 2) + Math.pow(player.y - d.y, 2));
+if (dist < 30) {
+player.discAmmo++;
+discs.splice(i, 1);
+}
+});
+// Fired Disc vs Bike
+firedDiscs.forEach((d, i) => {
+bots.forEach(bot => {
+if (!bot.alive) return;
+const dist = Math.sqrt(Math.pow(bot.x - d.x, 2) + Math.pow(bot.y - d.y, 2));
+if (dist < 10) {
+bot.alive = false;
+d.alive = false;
+}
+});
+});
+
+// Clean up dead objects
+bots = bots.filter(b => b.alive);
+firedDiscs = firedDiscs.filter(d => d.alive);
+
+// Storm Logic
+gameTimer += delta;
+const aliveBots = bots.filter(b=>b.alive).length;
+timerDisplay.textContent = `Bots: ${aliveBots} / 20`;
+ammoDisplay.textContent = `Discs: ${player.discAmmo}`;
+stormTimer -= delta;
+if (stormTimer <= 0) {
+if (stormState === 'holding') {
+stormState = 'shrinking';
+stormTimer = 30;
+} else if (stormState === 'shrinking') {
+stormState = 'holding';
+stormTimer = 20;
+}
+}
+const shrinkRatio = shrinkCycle / 5;
+const targetRadius = arenaRadius * (1 - shrinkRatio);
+if (stormState === 'shrinking' && stormRadius > targetRadius) {
+stormRadius = Math.max(targetRadius, stormRadius - 0.5 * delta);
+}
+if (stormRadius <= targetRadius) {
+shrinkCycle++;
+}
+
+// Check for game end
+const remaining = [player, ...bots].filter(b => b.alive);
+if (remaining.length <= 1) {
+gameOver = true;
+showEndScreen(remaining[0] === player);
+} else if (!player.alive) {
+gameOver = true;
+showEndScreen(false);
+}
+}
+
+function draw() {
+ctx.clearRect(0, 0, W, H);
+// Draw grid
+ctx.strokeStyle = '#003344';
+ctx.lineWidth = 1;
+for(let x=-arenaRadius*1.5; x<=arenaRadius*1.5; x+=gameScale/10) {
+const start = toScreen(x, arenaRadius*1.5);
+const end = toScreen(x, -arenaRadius*1.5);
+ctx.beginPath(); ctx.moveTo(start.x, start.y); ctx.lineTo(end.x, end.y); ctx.stroke();
+}
+for(let y=-arenaRadius*1.5; y<=arenaRadius*1.5; y+=gameScale/10) {
+const start = toScreen(arenaRadius*1.5, y);
+const end = toScreen(-arenaRadius*1.5, y);
+ctx.beginPath(); ctx.moveTo(start.x, start.y); ctx.lineTo(end.x, end.y); ctx.stroke();
+}
+// Draw storm wall
+const stormPos = toScreen(0, 0);
+ctx.save();
+ctx.shadowBlur = 30;
+ctx.shadowColor = '#00aaff';
+ctx.strokeStyle = '#00aaff';
+ctx.lineWidth = 10;
+ctx.beginPath();
+ctx.ellipse(stormPos.x, stormPos.y, stormRadius, stormRadius, TILT_ANGLE, 0, 2 * Math.PI);
+ctx.stroke();
+ctx.restore();
+// Draw discs
+discs.forEach(d => d.draw());
+// Draw trails first
+const allBikes = [player, ...bots];
+allBikes.forEach(bike => bike.draw());
+// Draw fired discs
+firedDiscs.forEach(d => d.draw());
+// Draw bike
+allBikes.forEach(bike => bike.draw());
+}
+
+function showEndScreen(win) {
+overlay.style.display = "flex";
+if (win) {
+overlay.innerHTML = "🎉 C O N G R A T U L A T I O N S 🎉<br/>YOU WIN!<br/>Tap to restart";
+} else {
+overlay.innerHTML = "G A M E  O V E R<br/>Tap to restart";
+}
+timerDisplay.style.display = "none";
+ammoDisplay.style.display = "none";
+}
+
+// --- MAIN LOOP ---
+function loop(timestamp) {
+const delta = (timestamp - lastUpdate) / 1000;
+lastUpdate = timestamp;
+if (gameOver) return;
+if (!gameActive) {
+draw();
+ctx.fillStyle = "rgba(0,0,0,0.7)";
+ctx.fillRect(0,0,W,H);
+ctx.fillStyle = "cyan";
+ctx.textAlign = "center";
+ctx.font = `60px 'Share Tech Mono', monospace`;
+if (timestamp - lastShrink > 1000) {
+countdown--;
+lastShrink = timestamp;
+}
+ctx.fillText(countdown > 0 ? countdown : "GO!", W/2, H/2);
+if (countdown <= 0) gameActive = true;
+requestAnimationFrame(loop);
+return;
+}
+update(delta);
+draw();
+requestAnimationFrame(loop);
+}
+
+// --- INPUT HANDLERS ---
+let lastTap = 0;
+canvas.addEventListener("touchstart", e => {
+if (gameOver) {
+startGame();
+return;
+}
+// Check if player tapped their bike to throw a disc
+const screenPos = toScreen(player.x, player.y);
+const dist = Math.sqrt(Math.pow(e.touches[0].clientX - screenPos.x, 2) + Math.pow(e.touches[0].clientY - screenPos.y, 2));
+if (dist < gameScale * 0.1 && player.discAmmo > 0) {
+firedDiscs.push(new FiredDisc(player.x, player.y, player.dir, player.color));
+player.discAmmo--;
+return;
+}
+const now = new Date().getTime();
+if (now - lastTap < 200) return; // Prevent double tap issues
+lastTap = now;
+
+let x = e.touches[0].clientX;
+if (x < W/2) player.turnDir = -1;
+else player.turnDir = 1;
+});
+
+canvas.addEventListener("touchend", () => {
+player.turnDir = 0;
+});
+canvas.addEventListener("touchcancel", () => {
+player.turnDir = 0;
+});
+
+document.addEventListener('keydown', (e) => {
+if (gameOver) {
+startGame();
+return;
+}
+if (e.key === 'ArrowLeft' || e.key.toLowerCase() === 'a') player.turnDir = -1;
+if (e.key === 'ArrowRight' || e.key.toLowerCase() === 'd') player.turnDir = 1;
+if (e.key === ' ') {
+if (player.discAmmo > 0) {
+firedDiscs.push(new FiredDisc(player.x, player.y, player.dir, player.color));
+player.discAmmo--;
+}
+}
+});
+document.addEventListener('keyup', (e) => {
+if (e.key === 'ArrowLeft' || e.key.toLowerCase() === 'a') player.turnDir = 0;
+if (e.key === 'ArrowRight' || e.key.toLowerCase() === 'd') player.turnDir = 0;
+});
 
 // --- COLOR PICKER ---
-document.querySelectorAll(".color-box").forEach(box=>{
-  box.addEventListener("click", ()=>{
-    player.color = box.dataset.color;
-  });
+document.querySelectorAll(".color-box").forEach(box => {
+box.addEventListener("click", () => {
+document.querySelectorAll(".color-box").forEach(b => b.classList.remove("active"));
+box.classList.add("active");
+});
 });
 
-// --- START GAME ---
-playBtn.addEventListener("click", ()=>{
-  menu.style.display = "none";
-  canvas.style.display = "block";
-  overlay.style.display = "none";
-  startGame();
-});
+// --- START GAME BUTTON ---
+playBtn.addEventListener("click", startGame);
 
-function startGame() {
-  lanes = [H*0.3, H*0.5, H*0.7];
-  currentLane = 1;
-  player.x = W*0.1;
-  player.y = lanes[currentLane]-player.h/2;
-  obstacles = [];
-  gameOver = false;
-  started = true;
-  loop();
-}
-
-// --- CONTROLS (tap left/right) ---
-canvas.addEventListener("touchstart", e=>{
-  if (gameOver) {
-    startGame();
-    return;
-  }
-  let x = e.touches[0].clientX;
-  if (x < W/2 && currentLane > 0) currentLane--; 
-  else if (x >= W/2 && currentLane < lanes.length-1) currentLane++;
-  player.y = lanes[currentLane]-player.h/2;
-});
-
-// --- LOOP ---
-function loop() {
-  if (gameOver) return;
-
-  ctx.clearRect(0,0,W,H);
-
-  // Background scroll
-  scrollY += 5;
-  ctx.fillStyle = "cyan";
-  for (let i=0;i<20;i++) {
-    let y = (i*H/20 + scrollY) % H;
-    ctx.fillRect(W/2-2, y, 4, 20);
-  }
-
-  // Player
-  ctx.fillStyle = player.color;
-  ctx.fillRect(player.x, player.y, player.w, player.h);
-
-  // Obstacles
-  if (Math.random()<0.02) spawnObstacle();
-  ctx.fillStyle = "red";
-  obstacles.forEach(o=>{
-    o.x -= 6;
-    ctx.fillRect(o.x,o.y,o.w,o.h);
-  });
-
-  // Collision
-  obstacles.forEach(o=>{
-    if (player.x < o.x+o.w &&
-        player.x+player.w > o.x &&
-        player.y < o.y+o.h &&
-        player.y+player.h > o.y) {
-      gameOver = true;
-      overlay.style.display = "flex";
-    }
-  });
-
-  // Cleanup
-  obstacles = obstacles.filter(o=>o.x>-50);
-
-  if (!gameOver) requestAnimationFrame(loop);
-}
-
-function spawnObstacle() {
-  let lane = Math.floor(Math.random()*lanes.length);
-  obstacles.push({ x: W+50, y: lanes[lane]-20, w:40, h:40 });
-}
 </script>
 </body>
 </html>
