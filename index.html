@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Tron Light Cycle with Discs</title>
+<title>Tron Light Cycle Forward with Trails</title>
 <style>
   body { margin:0; overflow:hidden; background:black; }
   canvas { display:block; }
@@ -27,13 +27,13 @@ const player = {
   size: 15,
   color: 'cyan',
   trail: [],
-  speed: 6,
+  speed: 10, // movement per tap
   discs: 0
 };
 
 const bots = [];
-const discs = []; // discs on grid
-const flyingDiscs = []; // discs thrown by player
+const discs = [];
+const flyingDiscs = [];
 
 let botSpeed = 4;
 let botTrailLength = 30;
@@ -43,21 +43,26 @@ let gridOffset = 0;
 let score = 0;
 let gameOver = false;
 
-// Input
-let keys = {};
-document.addEventListener('keydown', e => keys[e.key]=true);
-document.addEventListener('keyup', e => keys[e.key]=false);
+// Split-screen tap control
+canvas.addEventListener('click', (e)=>{
+  const x = e.clientX;
+  if(x < canvas.width/2){
+    player.x -= player.speed;
+  } else {
+    player.x += player.speed;
+  }
+  player.x = Math.max(10, Math.min(canvas.width-10, player.x));
 
-// Double-tap detection
-let lastTap = 0;
-canvas.addEventListener('click',()=>{
+  // Double-tap to throw disc
   const now = Date.now();
-  if(now-lastTap<300 && player.discs>0){
+  if(now - lastTap < 300 && player.discs>0){
     flyingDiscs.push({x:player.x, y:player.y, size:10, color:'yellow'});
     player.discs--;
   }
   lastTap = now;
 });
+
+let lastTap = 0;
 
 // Draw scrolling grid
 function drawGrid() {
@@ -65,7 +70,6 @@ function drawGrid() {
   ctx.lineWidth=1;
   gridOffset += 6;
 
-  // Horizontal lines
   for(let i=0;i<canvas.height;i+=gridSpacing){
     const y = i + (gridOffset % gridSpacing);
     const scale = 1 - (y - horizon)/(canvas.height-horizon);
@@ -78,7 +82,6 @@ function drawGrid() {
     ctx.stroke();
   }
 
-  // Vertical lines
   for(let i=0;i<canvas.width;i+=gridSpacing){
     ctx.beginPath();
     ctx.moveTo(i, canvas.height);
@@ -96,27 +99,25 @@ function drawPerimeter() {
   ctx.fillRect(canvas.width-10,0,10,canvas.height);
 }
 
-// Update player
-function updatePlayer(){
-  if(keys['ArrowLeft']) player.x -= player.speed;
-  if(keys['ArrowRight']) player.x += player.speed;
-  if(keys['ArrowUp']) player.y -= player.speed;
-  if(keys['ArrowDown']) player.y += player.speed;
-
-  player.x = Math.max(10, Math.min(canvas.width-10, player.x));
-  player.y = Math.max(10, Math.min(canvas.height-10, player.y));
-
-  player.trail.push({x:player.x, y:player.y});
+// Update player trail
+function updatePlayerTrail(){
+  player.trail.push({x:player.x,y:player.y});
   if(player.trail.length>50) player.trail.shift();
 }
 
-// Draw player with trail
+// Draw player with continuous light trail
 function drawPlayer(){
-  player.trail.forEach((t,i)=>{
-    ctx.fillStyle = `rgba(0,255,255,${i/player.trail.length})`;
-    ctx.fillRect(t.x-5,t.y-5,player.size,player.size);
-  });
-  ctx.fillStyle = player.color;
+  ctx.strokeStyle = 'cyan';
+  ctx.lineWidth = player.size;
+  ctx.beginPath();
+  for(let i=0;i<player.trail.length;i++){
+    const t = player.trail[i];
+    if(i===0) ctx.moveTo(t.x, t.y);
+    else ctx.lineTo(t.x, t.y);
+  }
+  ctx.stroke();
+
+  ctx.fillStyle=player.color;
   ctx.fillRect(player.x-player.size/2,player.y-player.size/2,player.size,player.size);
 }
 
@@ -137,7 +138,7 @@ function spawnDisc(){
 // Update bots
 function updateBots(){
   bots.forEach(bot=>{
-    bot.y += 6; // forward motion
+    bot.y += 6;
     if(bot.x < player.x) bot.x += botSpeed*0.5;
     if(bot.x > player.x) bot.x -= botSpeed*0.5;
 
@@ -153,10 +154,15 @@ function updateBots(){
 // Draw bots with trails
 function drawBots(){
   bots.forEach(bot=>{
-    bot.trail.forEach((t,i)=>{
-      ctx.fillStyle=`rgba(255,0,255,${i/bot.trail.length})`;
-      ctx.fillRect(t.x-5,t.y-5,bot.size,bot.size);
-    });
+    ctx.strokeStyle='magenta';
+    ctx.lineWidth = bot.size;
+    ctx.beginPath();
+    for(let i=0;i<bot.trail.length;i++){
+      const t=bot.trail[i];
+      if(i===0) ctx.moveTo(t.x,t.y);
+      else ctx.lineTo(t.x,t.y);
+    }
+    ctx.stroke();
     ctx.fillStyle=bot.color;
     ctx.fillRect(bot.x-bot.size/2, bot.y-bot.size/2, bot.size, bot.size);
   });
@@ -164,10 +170,8 @@ function drawBots(){
 
 // Update discs
 function updateDiscs(){
-  // scroll discs forward
   discs.forEach(d=>d.y+=6);
   for(let i=discs.length-1;i>=0;i--){
-    // collect
     const dx = player.x - discs[i].x;
     const dy = player.y - discs[i].y;
     const dist = Math.sqrt(dx*dx + dy*dy);
@@ -177,15 +181,14 @@ function updateDiscs(){
     } else if(discs[i].y>canvas.height) discs.splice(i,1);
   }
 
-  // update flying discs
-  flyingDiscs.forEach(fd=>fd.y -= 15);
+  flyingDiscs.forEach(fd=>fd.y-=15);
   for(let i=flyingDiscs.length-1;i>=0;i--){
-    const fd = flyingDiscs[i];
+    const fd=flyingDiscs[i];
     for(let j=bots.length-1;j>=0;j--){
       const dx = fd.x - bots[j].x;
       const dy = fd.y - bots[j].y;
       const dist = Math.sqrt(dx*dx + dy*dy);
-      if(dist < fd.size){
+      if(dist<fd.size){
         bots.splice(j,1);
         flyingDiscs.splice(i,1);
         break;
@@ -239,7 +242,7 @@ function gameLoop(){
   ctx.clearRect(0,0,canvas.width,canvas.height);
   drawGrid();
   drawPerimeter();
-  updatePlayer();
+  updatePlayerTrail();
   drawPlayer();
 
   if(botSpawnTimer<=0){spawnBot();botSpawnTimer=50;} else botSpawnTimer--;
