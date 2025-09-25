@@ -1,440 +1,363 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
-<title>L I G H T R U N N E R</title>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
+<title>LightRunner — Tron Battle Royale</title>
 <style>
-  html,body{height:100%;margin:0;background:#000;color:#0ff; font-family:Inter,system-ui,Roboto,monospace;}
-  #gameWrap{position:relative;width:100%;height:100vh;overflow:hidden;background:#000;}
-  canvas{display:block; background:linear-gradient(180deg,#000,#001);}
-  .hud{
-    position:absolute;left:12px;top:12px;color:#0ff;font-weight:700;text-shadow:0 0 6px rgba(0,255,255,.12);
-    display:flex;gap:12px;align-items:center;font-size:14px;
-  }
-  .hud .badge{background:rgba(0,0,0,.5);padding:8px 10px;border-radius:8px;border:1px solid rgba(0,255,255,.08)}
-  .controls{
-    position:absolute;right:12px;bottom:12px;display:flex;flex-direction:column;gap:10px;align-items:center;
-  }
-  .btn{
-    background:linear-gradient(180deg,rgba(255,255,255,.02),rgba(255,255,255,.01));
-    color:#0ff;border:1px solid rgba(0,255,255,.12);padding:12px 16px;border-radius:12px;font-weight:700;
-    box-shadow:0 6px 18px rgba(0,0,0,.6); user-select:none; touch-action:manipulation;
-  }
-  .small{padding:6px 10px;font-size:13px}
-  #message{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);color:#0ff;text-align:center;pointer-events:none}
-  #overlayInfo{position:absolute;left:50%;bottom:20%;transform:translateX(-50%);color:#0ff;background:rgba(0,0,0,.35);padding:10px 14px;border-radius:10px;border:1px solid rgba(0,255,255,.06)}
-  .mini{font-size:12px;opacity:.85}
+  :root{--accent:#7CFFEA;--bg:#000;--hud:rgba(0,255,255,.08);}
+  html,body{height:100%;margin:0;background:var(--bg);color:var(--accent);font-family:Inter,system-ui,Roboto,monospace;}
+  #wrap{position:relative;width:100%;height:100vh;overflow:hidden;background:linear-gradient(180deg,#000,#001);}
+  canvas{display:block; width:100%; height:100%;}
+  /* overlays */
+  .centerCard{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);background:rgba(0,0,0,0.6);border:1px solid rgba(0,255,255,.06);padding:18px;border-radius:12px;text-align:center;min-width:260px}
+  h1{margin:6px 0 6px 0;font-size:28px;letter-spacing:6px}
+  p.small{font-size:13px;opacity:.9;margin:8px 0}
+  .btn{display:inline-block;padding:12px 18px;border-radius:10px;border:1px solid rgba(0,255,255,.12);background:linear-gradient(180deg,rgba(255,255,255,.02),rgba(255,255,255,.01));color:var(--accent);font-weight:800;cursor:pointer;user-select:none}
+  #hud{position:absolute;left:12px;top:12px;display:flex;gap:10px;align-items:center;z-index:10}
+  .badge{background:rgba(0,0,0,0.45);padding:8px 10px;border-radius:8px;border:1px solid rgba(0,255,255,.06);font-weight:700;font-size:14px}
+  #controls{position:absolute;right:12px;bottom:12px;display:flex;flex-direction:column;gap:10px;z-index:10}
+  .mini{font-size:12px;opacity:.9}
+  #message{position:absolute;left:50%;top:12px;transform:translateX(-50%);z-index:11}
+  #phaseClock{font-size:13px}
+  #overlayInfo{position:absolute;left:50%;bottom:18%;transform:translateX(-50%);color:var(--accent);background:rgba(0,0,0,.3);padding:8px 12px;border-radius:10px;border:1px solid rgba(0,255,255,.06);z-index:9}
   @media (hover:none){
-    .hud{font-size:13px}
-    .btn{padding:14px 18px}
+    h1{font-size:22px}
+    .btn{padding:14px 20px}
   }
 </style>
 </head>
 <body>
-<div id="gameWrap">
+<div id="wrap">
   <canvas id="game"></canvas>
 
-  <div class="hud" id="hud">
+  <!-- HUD -->
+  <div id="hud">
     <div class="badge" id="playersLeft">Players: 20</div>
-    <div class="badge" id="stormInfo">Storm: --</div>
+    <div class="badge" id="phaseClock">Phase: —</div>
     <div class="badge" id="holdingBadge">Disc: No</div>
   </div>
 
-  <div class="controls">
+  <!-- Controls -->
+  <div id="controls">
     <div id="throwBtn" class="btn">THROW</div>
-    <div id="restartBtn" class="btn small">Restart</div>
+    <div id="restartBtn" class="btn mini">Restart</div>
   </div>
 
   <div id="message"></div>
-  <div id="overlayInfo" class="mini">Tap left/right sides to steer. Throw button to launch disc. Last player wins.</div>
+  <div id="overlayInfo" class="mini">Tap left/right sides to steer. Throw to launch disc forward. Last alive wins.</div>
+
+  <!-- Start Menu -->
+  <div id="startMenu" class="centerCard">
+    <h1>L I G H T R U N N E R</h1>
+    <p class="small">Tron-style light cycles — Battle Royale twist. Tap left/right to steer. Pick up discs and throw to eliminate opponents. Watch the storm shrink!</p>
+    <div style="margin-top:8px">
+      <div id="btnPlay" class="btn">PLAY</div>
+    </div>
+    <p class="small" style="margin-top:10px">Players: 20 • Discs spawn sparsely • Storm phases: Shrink 30s → Hold 15s → Shrink 32s → Hold 15s (repeats)</p>
+  </div>
+
+  <!-- Game Over -->
+  <div id="gameOver" class="centerCard" style="display:none">
+    <h1 id="gameOverTitle">Game Over</h1>
+    <p id="winnerLine" class="small">Winner: —</p>
+    <div style="margin-top:8px">
+      <div id="btnRestart" class="btn">Restart</div>
+    </div>
+  </div>
 </div>
 
 <script>
-/*
-  LightRunner — Single-file Tron Battle Royale
-  - Grid-based trail occupancy for efficient collision detection
-  - Storm: shrinking circular safe area
-  - Discs: pickups placed on map; players can pick one and throw it straight
-  - Simple opponent AI
-  Controls: Tap left/right side to steer. Arrow keys also supported. Use THROW button to throw.
+/* LightRunner — Full mini-game single file
+   - World larger than viewport for camera follow
+   - Storm phases: shrink30 -> hold15 -> shrink32 -> hold15 -> loop
+   - Discs tuned to be sparse but enough for many players to pick some
+   - Start menu and game over screens
 */
 
 // CONFIG
 const CONFIG = {
   initialPlayers: 20,
-  cellSize: 8,             // grid cell pixel size
-  trailThicknessCells: 1,  // width of trail in cells (1 = one cell)
-  speedCellsPerSecond: 20, // cells per second movement speed
-  tickRate: 60,            // updates per second for logic
-  discCount: 6,            // number of discs spawned on map
-  aiAggression: 0.02,      // higher = more turning/throwing
-  storm: {
-    totalTimeSeconds: 140, // time until storm reaches center (shrinks linearly)
-    innerRadiusPixels: 24, // final inner radius (can't shrink past this)
+  cellSize: 10,           // grid cell pixel size
+  trailThicknessCells: 1, // width of trail in cells
+  speedCellsPerSecond: 12,// cells per second
+  tickRate: 60,
+  baseDiscRatio: 0.6,     // initial discs = players * baseDiscRatio
+  discRespawnInterval: 4000, // ms - attempt respawn occasionally
+  aiAggression: 0.03,
+  world: {
+    // world will be rectangular larger than viewport: width = max(viewport*2, 2000)
+    minWidth: 2000,
+    minHeight: 1200
   },
-  canvasPadding: 0, // additional padding to treat as out of bounds
+  storm: {
+    // explicit phase sequence as requested:
+    phases:[
+      {type:'shrink', duration:30},  // shrink for 30s
+      {type:'hold',   duration:15},  // hold for 15s
+      {type:'shrink', duration:32},  // shrink for 32s
+      {type:'hold',   duration:15}   // hold for 15s
+      // sequence repeats
+    ],
+    finalInnerRadius: 40 // pixels — storm won't shrink below this circular radius
+  },
   colors: {
-    background: '#000',
-    trail: '#0ff',
-    stormEdge: 'rgba(255,0,80,0.24)',
-    disc: '#ffd400',
+    background: '#000000',
+    stormEdge: 'rgba(255,20,100,0.26)',
+    disc: '#FFD400',
     you: '#7CFFEA'
   }
 };
 
-// GLOBALS
-let canvas = document.getElementById('game');
-let ctx = canvas.getContext('2d', {alpha:false});
-let w = 0, h = 0;
-let gridCols = 0, gridRows = 0;
+// DOM & Canvas
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d', {alpha:false});
+const wrap = document.getElementById('wrap');
+
+// UI
+const startMenu = document.getElementById('startMenu');
+const gameOver = document.getElementById('gameOver');
+const btnPlay = document.getElementById('btnPlay');
+const btnRestart = document.getElementById('btnRestart');
+const restartBtn = document.getElementById('restartBtn');
+const throwBtn = document.getElementById('throwBtn');
+const hudPlayers = document.getElementById('playersLeft');
+const hudPhase = document.getElementById('phaseClock');
+const hudHolding = document.getElementById('holdingBadge');
+const messageEl = document.getElementById('message');
+const winnerLine = document.getElementById('winnerLine');
+const gameOverTitle = document.getElementById('gameOverTitle');
+
+let vw=0, vh=0;
+let worldW=0, worldH=0;
+let gridCols=0, gridRows=0;
 let cellSize = CONFIG.cellSize;
-let occupancy = []; // Uint8Array or Int32 - owner id of occupant, 0 empty, >0 player id or -1 for disc/trash
-let players = [];   // list of player objects
-let discs = [];     // list of discs pickups on map
-let localPlayerId = 1; // first player is user
+let occupancy; // Int32Array grid world occupancy: 0 empty, >0 player id
+let players = [];
+let discs = [];
+let localPlayerId = 1;
 let running = false;
-let lastTime = performance.now();
+let lastTime = 0;
 let acc = 0;
-let tickInterval = 1000 / CONFIG.tickRate;
-let stormStartTime = 0;
-let stormMaxRadius = 0;
-let stormMinRadius = CONFIG.storm.innerRadiusPixels;
-let stormElapsed = 0;
-let messageEl = document.getElementById('message');
-let hudPlayers = document.getElementById('playersLeft');
-let hudStorm = document.getElementById('stormInfo');
-let hudHolding = document.getElementById('holdingBadge');
+let tickInterval = 1000/CONFIG.tickRate;
+let camera = {x:0,y:0}; // world coords of top-left of viewport
+let storm = {
+  center:{x:0,y:0},
+  radiusStart:0,
+  radius:0,
+  radiusTarget:0,
+  phaseIndex:0,
+  phaseStartTime:0,
+  phaseTimeRemaining:0
+};
+let msgTimeout = null;
 
-// UTILS
-function rnd(min, max){ return Math.random()*(max-min)+min; }
-function clamp(v,a,b){ return Math.max(a, Math.min(b, v)); }
-function cellIndex(col,row){ return row*gridCols + col; }
-function pixelToCell(x,y){ return {c:Math.floor(x/cellSize), r:Math.floor(y/cellSize)}; }
-function cellToPixel(c,r){ return {x: c*cellSize + cellSize/2, y: r*cellSize + cellSize/2}; }
+// UTIL
+function rnd(min,max){return Math.random()*(max-min)+min;}
+function clamp(v,a,b){return Math.max(a,Math.min(b,v));}
+function pixelToCellWorld(x,y){ return {c: Math.floor(x/cellSize), r: Math.floor(y/cellSize)}; }
+function cellToPixelWorld(c,r){ return {x: c*cellSize + cellSize/2, y: r*cellSize + cellSize/2}; }
+function cellIndex(c,r){ return r*gridCols + c; }
 function distance(a,b){ let dx=a.x-b.x, dy=a.y-b.y; return Math.sqrt(dx*dx+dy*dy); }
-
-// RESIZE & INIT GRID
-function resize(){
-  let rect = document.getElementById('gameWrap').getBoundingClientRect();
-  // Occupy full screen
-  canvas.width = Math.floor(rect.width);
-  canvas.height = Math.floor(rect.height);
-  w = canvas.width; h = canvas.height;
-  gridCols = Math.max(20, Math.floor(w / cellSize));
-  gridRows = Math.max(20, Math.floor(h / cellSize));
-  occupancy = new Int32Array(gridCols * gridRows);
-  stormMaxRadius = Math.sqrt((w*w + h*h)) / 2 + 20; // start outside corners
+function randColor(i){
+  const p = ['#7CFFEA','#FFD400','#FF6B6B','#8BE38B','#7A7CFF','#FF88D5','#FFA66B','#6FF0FF','#C9FF7A','#FFB07C'];
+  return p[i % p.length];
 }
-window.addEventListener('resize', ()=>{ resize(); resetGame(); });
 
-// PLAYER & AI LOGIC
+// RESIZE + WORLD
+function resize(){
+  const rect = wrap.getBoundingClientRect();
+  vw = Math.floor(rect.width);
+  vh = Math.floor(rect.height);
+  canvas.width = vw;
+  canvas.height = vh;
+  worldW = Math.max(CONFIG.world.minWidth, vw * 2);
+  worldH = Math.max(CONFIG.world.minHeight, vh * 2);
+  gridCols = Math.max(40, Math.floor(worldW / cellSize));
+  gridRows = Math.max(30, Math.floor(worldH / cellSize));
+  occupancy = new Int32Array(gridCols * gridRows);
+  // center storm in world center initially
+  storm.center.x = worldW/2;
+  storm.center.y = worldH/2;
+  // initial storm radius = large to cover world
+  storm.radiusStart = Math.max(worldW, worldH);
+  storm.radius = storm.radiusStart;
+  storm.radiusTarget = storm.radiusStart * 0.75; // starting target (will be updated)
+  // camera center around local player when running; otherwise center of world
+  if(!running){
+    camera.x = (worldW - vw) / 2;
+    camera.y = (worldH - vh) / 2;
+  }
+}
+
+// PLAYERS & TRAILS
 function createPlayer(id, isHuman){
-  // direction is a vector on grid movement: up/down/left/right (4-way)
   const dirs = [{x:1,y:0},{x:-1,y:0},{x:0,y:1},{x:0,y:-1}];
   let dir = dirs[Math.floor(Math.random()*dirs.length)];
-  // spawn random position within canvas but inside some central radius
+  let spawnPadding = 60;
   let p = {
     id,
     isHuman: !!isHuman,
     alive: true,
     dir,
-    speedCellsPerSec: CONFIG.speedCellsPerSecond * (0.9 + Math.random()*0.2),
-    trail: [], // array of occupied cell indices
-    pos: {x: Math.floor(Math.random()*w), y: Math.floor(Math.random()*h)},
-    color: randomColorForId(id),
+    speedCellsPerSec: CONFIG.speedCellsPerSecond * (0.92 + Math.random()*0.16),
+    trail: [], // cell indices
+    pos: {x: rnd(spawnPadding, worldW - spawnPadding), y: rnd(spawnPadding, worldH - spawnPadding)},
+    color: randColor(id),
     hasDisc: false,
-    discCooldown: 0, // prevent immediate re-throw
-    ai: {
-      turnCooldown: 0,
-      aggression: CONFIG.aiAggression + Math.random()*0.03
-    },
+    discCooldown: 0,
+    ai: {turnCooldown: Math.random()*1, aggression: CONFIG.aiAggression + Math.random()*0.03},
     name: isHuman? 'You' : ('Bot'+id)
   };
-  // Align to grid cell center
-  let c = pixelToCell(p.pos.x, p.pos.y);
-  let cp = cellToPixel(c.c, c.r);
+  // align to grid
+  let c = pixelToCellWorld(p.pos.x, p.pos.y);
+  let cp = cellToPixelWorld(c.c, c.r);
   p.pos.x = cp.x; p.pos.y = cp.y;
   return p;
 }
-function randomColorForId(id){
-  // generate distinct-ish colors
-  const palette = [
-    '#7CFFEA','#FFD400','#FF6B6B','#8BE38B','#7A7CFF','#FF88D5','#FFA66B','#6FF0FF','#C9FF7A'
-  ];
-  return palette[id % palette.length];
-}
 
-// OCCUPANCY helpers
 function markTrailCell(player, c, r){
-  if(c < 0 || r < 0 || c >= gridCols || r >= gridRows) return;
+  if(c<0 || r<0 || c>=gridCols || r>=gridRows) return;
   occupancy[cellIndex(c,r)] = player.id;
   player.trail.push(cellIndex(c,r));
 }
-function isCellOccupied(c, r){
-  if(c < 0 || r < 0 || c >= gridCols || r >= gridRows) return true;
+
+function isCellOccupied(c,r){
+  if(c<0 || r<0 || c>=gridCols || r>=gridRows) return true;
   return occupancy[cellIndex(c,r)] !== 0;
 }
 
-// DISC helpers
-function spawnDiscs(n){
+// DISC logic
+function spawnInitialDiscs(){
   discs = [];
-  for(let i=0;i<n;i++){
-    let tries = 0;
-    while(tries++ < 200){
-      let px = rnd(0.1*w, 0.9*w);
-      let py = rnd(0.1*h, 0.9*h);
-      let cell = pixelToCell(px, py);
-      if(!isCellOccupied(cell.c, cell.r)){
-        discs.push({
-          id: i+1,
-          x: Math.floor(px),
-          y: Math.floor(py),
-          radius: cellSize*0.8,
-          picked: false,
-          holder: null
-        });
-        break;
-      }
+  const targetNum = Math.max(4, Math.floor(players.length * CONFIG.baseDiscRatio));
+  for(let i=0;i<targetNum;i++) spawnOneDisc();
+}
+function spawnOneDisc(){
+  let tries = 0;
+  while(tries++ < 300){
+    let px = rnd(40, worldW-40);
+    let py = rnd(40, worldH-40);
+    let cell = pixelToCellWorld(px, py);
+    if(!isCellOccupied(cell.c, cell.r)){
+      discs.push({
+        id: 'disc_'+Date.now()+'_'+Math.floor(Math.random()*9999),
+        x: px, y: py,
+        radius: cellSize*0.9,
+        picked: false,
+        holder: null,
+        inFlight: false,
+        vx:0, vy:0,
+        ownerId: null
+      });
+      return true;
     }
   }
+  return false;
 }
 
-// GAME RESET
-function resetGame(){
+// RESET GAME
+function resetGameSetup(){
   resize();
-  // clear occupancy
   occupancy.fill(0);
   players = [];
-  // create players
   for(let i=1;i<=CONFIG.initialPlayers;i++){
     players.push(createPlayer(i, i===localPlayerId));
   }
-  // initial trail marking - mark each player's starting cell
+  // mark starting positions
   players.forEach(p=>{
-    let c = pixelToCell(p.pos.x, p.pos.y);
+    let c = pixelToCellWorld(p.pos.x, p.pos.y);
     markTrailCell(p, c.c, c.r);
   });
-  spawnDiscs(CONFIG.discCount);
-  stormStartTime = performance.now();
+  spawnInitialDiscs();
+  // storm phase init
+  storm.phaseIndex = 0;
+  storm.phaseStartTime = performance.now();
+  storm.radiusStart = Math.max(worldW, worldH);
+  // compute first target radius as a fraction
+  storm.radiusTarget = Math.max(CONFIG.storm.finalInnerRadius, storm.radiusStart * 0.8);
+  storm.radius = storm.radiusStart;
   running = true;
-  messageEl.textContent = '';
+  hideStart();
+  hideGameOver();
+  flashMessage('');
   updateHud();
 }
 
-// HUD
+// HUD update
 function updateHud(){
-  let alive = players.filter(p=>p.alive).length;
-  hudPlayers.textContent = 'Players: ' + alive;
-  // storm info
-  hudStorm.textContent = 'Storm: ' + Math.max(0, Math.floor((1 - stormElapsed/CONFIG.storm.totalTimeSeconds)*100)) + '%';
+  hudPlayers.textContent = 'Players: ' + players.filter(p=>p.alive).length;
+  let phase = stormPhase();
+  if(phase){
+    hudPhase.textContent = phase.type.toUpperCase() + ' • ' + Math.ceil(phase.remaining) + 's';
+  } else hudPhase.textContent = '—';
   let local = players.find(p=>p.id===localPlayerId);
   hudHolding.textContent = 'Disc: ' + (local && local.hasDisc ? 'Yes' : 'No');
 }
 
-// GAME TICK (logic)
-function tick(dt){
-  if(!running) return;
-  // update storm
-  stormElapsed = (performance.now() - stormStartTime)/1000;
-  let stormFrac = clamp(stormElapsed / CONFIG.storm.totalTimeSeconds, 0, 1);
-  let currentStormRadius = stormMaxRadius * (1 - stormFrac) + stormMinRadius * stormFrac;
-
-  // update players
-  players.forEach(p=>{
-    if(!p.alive) return;
-    // AI steering for bots
-    if(!p.isHuman){
-      // simple obstacle avoidance + random turning
-      p.ai.turnCooldown -= dt;
-      if(p.ai.turnCooldown <= 0){
-        p.ai.turnCooldown = 0.12 + Math.random()*0.6;
-        // bias to keep moving away from storm edge if near edge
-        let distCenter = distance(p.pos, {x:w/2,y:h/2});
-        let awayFromStorm = distCenter > currentStormRadius*0.85 ? -1 : 0;
-        if(Math.random() < 0.22 + p.ai.aggression){
-          // random 90-degree turn left or right
-          if(Math.random() < 0.5) turnLeft(p); else turnRight(p);
-        } else if(awayFromStorm < 0){
-          // try to steer inward toward center
-          steerTowardsCenter(p);
-        } else {
-          // small chance to nudge
-          if(Math.random() < 0.04) { if(Math.random()<0.5) turnLeft(p); else turnRight(p); }
-        }
-      }
-      // AI throwing disc: if has disc and sees someone ahead within some range, throw
-      if(p.hasDisc && Math.random() < 0.012 + p.ai.aggression){
-        // throw forward
-        throwDiscFromPlayer(p);
-      }
-    }
-
-    // movement: move based on dir + speed * dt
-    let moveCells = (p.speedCellsPerSec) * dt;
-    // move in pixel space
-    p.pos.x += p.dir.x * moveCells * cellSize;
-    p.pos.y += p.dir.y * moveCells * cellSize;
-
-    // Snap to grid cell centers when crossing a cell boundary to avoid drift (keeps trails contiguous)
-    let cell = pixelToCell(p.pos.x, p.pos.y);
-    let center = cellToPixel(cell.c, cell.r);
-    // Small snap to center if within half cell
-    p.pos.x = center.x;
-    p.pos.y = center.y;
-
-    // collision with walls (out-of-bounds)
-    if(p.pos.x < -10 || p.pos.x > w+10 || p.pos.y < -10 || p.pos.y > h+10){
-      killPlayer(p, 'crash');
-      return;
-    }
-
-    // storm kill
-    let distToCenter = Math.hypot(p.pos.x - w/2, p.pos.y - h/2);
-    if(distToCenter > currentStormRadius){
-      killPlayer(p, 'storm');
-      return;
-    }
-
-    // trail collision: check occupancy for the cell
-    let c = cell;
-    if(isCellOccupied(c.c, c.r)){
-      // if occupied by self at last trail pos it's allowed (we mark after move), otherwise die
-      let ownerId = occupancy[cellIndex(c.c, c.r)];
-      // allow if the only occupant is yourself and it was the last cell you occupied (avoid instant self-kill)
-      if(!(ownerId === p.id && p.trail[p.trail.length-1] === cellIndex(c.c,c.r))){
-        killPlayer(p, 'trail');
-        return;
-      }
-    }
-
-    // mark new trail cell
-    markTrailCell(p, c.c, c.r);
-
-    // pickup disc if landing on disc
-    discs.forEach(d=>{
-      if(!d.picked && !p.hasDisc){
-        let dx = p.pos.x - d.x, dy = p.pos.y - d.y;
-        if(Math.hypot(dx,dy) < cellSize*1.2){
-          d.picked = true;
-          d.holder = p.id;
-          p.hasDisc = true;
-        }
-      }
-    });
-
-    // disc cooldown reduce
-    p.discCooldown = Math.max(0, p.discCooldown - dt);
-  });
-
-  // discs in flight (thrown)
-  discs.forEach(d=>{
-    if(d.inFlight){
-      d.x += d.vx*dt;
-      d.y += d.vy*dt;
-      // check collision with players (hit a player who isn't the holder)
-      players.forEach(p=>{
-        if(!p.alive) return;
-        if(p.id === d.ownerId) return;
-        let dx = p.pos.x - d.x, dy = p.pos.y - d.y;
-        if(Math.hypot(dx,dy) < cellSize*1.1){
-          // hit -> kill
-          killPlayer(p, 'hit by disc');
-          // remove disc on hit
-          d.inFlight = false;
-          d.picked = true;
-          d.holder = null;
-        }
-      });
-      // out of bounds -> stop and remove
-      if(d.x < -20 || d.x > w+20 || d.y < -20 || d.y > h+20){
-        d.inFlight = false;
-        d.picked = false;
-        d.holder = null;
-      }
-    } else if(d.picked && d.holder){
-      // follow holder
-      let holder = players.find(p => p.id === d.holder);
-      if(holder && holder.alive){
-        d.x = holder.pos.x + holder.dir.x * cellSize*1.2;
-        d.y = holder.pos.y + holder.dir.y * cellSize*1.2;
-      } else {
-        // holder died; drop disc at last pos
-        d.picked = false;
-        d.holder = null;
-        d.inFlight = false;
-      }
-    }
-  });
-
-  // check endgame
-  let alive = players.filter(p=>p.alive);
-  if(alive.length <= 1){
-    running = false;
-    if(alive.length === 1 && alive[0].id === localPlayerId){
-      showMessage('You win! 🎉');
-    } else {
-      showMessage('Game over. ' + (alive.length===1? alive[0].name+' wins.' : 'No winners.'));
-    }
-  }
-
-  updateHud();
+// STORM PHASES logic
+function stormPhase(){
+  // returns current phase object with remaining time in seconds
+  if(!storm) return null;
+  let phase = CONFIG.storm.phases[storm.phaseIndex % CONFIG.storm.phases.length];
+  let now = performance.now();
+  let elapsed = (now - storm.phaseStartTime) / 1000;
+  let remaining = Math.max(0, phase.duration - elapsed);
+  return {type:phase.type, duration:phase.duration, remaining, index:storm.phaseIndex};
 }
-
-// TURN helpers
-function turnLeft(p){
-  // rotate dir 90 deg left: (x,y) -> (-y,x)
-  let nx = -p.dir.y, ny = p.dir.x;
-  p.dir.x = nx; p.dir.y = ny;
-}
-function turnRight(p){
-  // rotate dir 90 deg right: (x,y) -> (y,-x)
-  let nx = p.dir.y, ny = -p.dir.x;
-  p.dir.x = nx; p.dir.y = ny;
-}
-function steerTowardsCenter(p){
-  let vx = (w/2) - p.pos.x, vy = (h/2) - p.pos.y;
-  // map to nearest cardinal direction
-  if(Math.abs(vx) > Math.abs(vy)){
-    p.dir.x = vx > 0 ? 1 : -1; p.dir.y = 0;
+function advanceStormPhase(){
+  // move to next phase and set new targets
+  storm.phaseIndex++;
+  storm.phaseStartTime = performance.now();
+  let nextPhase = CONFIG.storm.phases[storm.phaseIndex % CONFIG.storm.phases.length];
+  // if next is shrink, compute a new radiusTarget smaller than current
+  if(nextPhase.type === 'shrink'){
+    // shrink proportionally: reduce to between 50% and 80% of current
+    let reduction = rnd(0.48, 0.8); // variability
+    storm.radiusStart = storm.radius; // starting point for shrink
+    let minRadius = CONFIG.storm.finalInnerRadius;
+    let candidate = Math.max(minRadius, storm.radius * reduction);
+    // ensure target at least finalInnerRadius
+    storm.radiusTarget = Math.max(minRadius, candidate);
   } else {
-    p.dir.x = 0; p.dir.y = vy > 0 ? 1 : -1;
+    // hold: keep radius constant
+    storm.radiusStart = storm.radius;
+    storm.radiusTarget = storm.radius;
   }
 }
 
-// KILL & DISC THROW
+// MARK PLAYER KILL
 function killPlayer(p, reason){
+  if(!p.alive) return;
   p.alive = false;
-  // drop disc if holding
+  // if holding disc, drop it
   if(p.hasDisc){
-    // create a dropped disc at pos
     discs.push({
-      id: 'd_drop_'+(Date.now()),
+      id: 'drop_'+Date.now(),
       x: p.pos.x,
       y: p.pos.y,
       radius: cellSize*0.9,
       picked: false,
       holder: null,
-      inFlight: false
+      inFlight: false,
+      vx:0, vy:0,
+      ownerId: null
     });
     p.hasDisc = false;
   }
-  // leave trail as is (others can collide)
-  console.log('Player', p.id, 'killed: ', reason);
 }
 
 // THROW DISC
 function throwDiscFromPlayer(p){
   if(!p.hasDisc || p.discCooldown > 0) return false;
-  // find the disc belonging to p
-  let d = discs.find(x=>x.holder === p.id && !x.inFlight);
+  // find disc held
+  let d = discs.find(x => x.holder === p.id && !x.inFlight);
   if(!d) return false;
-  // make it fly forward
-  let speed = 700; // px/sec
   d.inFlight = true;
   d.ownerId = p.id;
   d.holder = null;
   d.picked = false;
+  let speed = 700; // px/s
   d.vx = p.dir.x * speed;
   d.vy = p.dir.y * speed;
   p.hasDisc = false;
@@ -442,26 +365,207 @@ function throwDiscFromPlayer(p){
   return true;
 }
 
+// AI helpers
+function turnLeft(p){ let nx = -p.dir.y, ny = p.dir.x; p.dir.x = nx; p.dir.y = ny; }
+function turnRight(p){ let nx = p.dir.y, ny = -p.dir.x; p.dir.x = nx; p.dir.y = ny; }
+function steerTowards(p, tx, ty){
+  let dx = tx - p.pos.x, dy = ty - p.pos.y;
+  if(Math.abs(dx) > Math.abs(dy)){ p.dir.x = dx>0?1:-1; p.dir.y = 0; } else { p.dir.x = 0; p.dir.y = dy>0?1:-1; }
+}
+function aiBehavior(){
+  players.forEach(p=>{
+    if(!p.alive || p.isHuman) return;
+    p.ai.turnCooldown -= 0.12;
+    if(p.ai.turnCooldown <= 0){
+      p.ai.turnCooldown = 0.12 + Math.random()*0.6;
+      // bias away from storm edge if near
+      let distC = distance(p.pos, storm.center);
+      if(distC > storm.radius * 0.82){
+        // steer inward
+        steerTowards(p, storm.center.x, storm.center.y);
+      } else if(Math.random() < 0.25 + p.ai.aggression*2){
+        // pick random left/right
+        if(Math.random() < 0.5) turnLeft(p); else turnRight(p);
+      }
+    }
+    // attempt to go for discs if not holding
+    if(!p.hasDisc && Math.random() < 0.12){
+      let available = discs.filter(d=>!d.picked && !d.inFlight);
+      if(available.length){
+        // nearest
+        let nearest = available.reduce((a,b) => (distance(p.pos,a) < distance(p.pos,b)) ? a : b);
+        steerTowards(p, nearest.x, nearest.y);
+      }
+    }
+    // attempt to throw occasionally if has disc
+    if(p.hasDisc && Math.random() < 0.012 + p.ai.aggression) throwDiscFromPlayer(p);
+  });
+}
+
+// GAME TICK
+function tick(dt){
+  if(!running) return;
+
+  // Storm progression: update radius depending on phase
+  let phaseObj = CONFIG.storm.phases[storm.phaseIndex % CONFIG.storm.phases.length];
+  let now = performance.now();
+  let elapsed = (now - storm.phaseStartTime)/1000;
+  if(phaseObj.type === 'shrink'){
+    // interpolate from start to target over phase duration
+    let t = clamp(elapsed / phaseObj.duration, 0, 1);
+    storm.radius = storm.radiusStart + (storm.radiusTarget - storm.radiusStart) * t;
+    if(t >= 1 - 1e-6){
+      // shrink finished, advance
+      advanceStormPhase();
+    }
+  } else { // hold
+    storm.radius = storm.radiusStart;
+    if(elapsed >= phaseObj.duration - 1e-6) advanceStormPhase();
+  }
+
+  // Update players
+  for(let p of players){
+    if(!p.alive) continue;
+    // AI decisions
+    if(!p.isHuman){
+      // small chance to perform advanced steer
+      if(Math.random() < 0.02) aiBehavior();
+    }
+    // movement
+    let movePixels = p.speedCellsPerSec * dt * cellSize;
+    p.pos.x += p.dir.x * movePixels;
+    p.pos.y += p.dir.y * movePixels;
+    // snap to grid centers to keep trails consistent
+    let cell = pixelToCellWorld(p.pos.x, p.pos.y);
+    let cp = cellToPixelWorld(cell.c, cell.r);
+    p.pos.x = cp.x; p.pos.y = cp.y;
+
+    // out of world bounds -> kill
+    if(p.pos.x < -20 || p.pos.x > worldW+20 || p.pos.y < -20 || p.pos.y > worldH+20){
+      killPlayer(p, 'out');
+      continue;
+    }
+
+    // storm kill
+    if(distance(p.pos, storm.center) > storm.radius){
+      killPlayer(p, 'storm');
+      continue;
+    }
+
+    // trail collision: if occupying an already-occupied cell by another player's trail -> die
+    if(isCellOccupied(cell.c, cell.r)){
+      let ownerId = occupancy[cellIndex(cell.c, cell.r)];
+      // allow if it's own last cell (to avoid instant self-collision) else die
+      if(!(ownerId === p.id && p.trail[p.trail.length-1] === cellIndex(cell.c, cell.r))){
+        killPlayer(p, 'trail');
+        continue;
+      }
+    }
+
+    // mark trail
+    markTrailCell(p, cell.c, cell.r);
+
+    // pickup disc if at same location and not holding one
+    for(let d of discs){
+      if(!d.picked && !p.hasDisc && !d.inFlight){
+        if(distance({x:d.x,y:d.y}, p.pos) < cellSize*1.2){
+          d.picked = true; d.holder = p.id; p.hasDisc = true;
+        }
+      }
+    }
+    // cooldown
+    p.discCooldown = Math.max(0, p.discCooldown - dt);
+  }
+
+  // discs movement
+  for(let d of discs){
+    if(d.inFlight){
+      d.x += d.vx * dt;
+      d.y += d.vy * dt;
+      // check hit with players
+      for(let p of players){
+        if(!p.alive) continue;
+        if(p.id === d.ownerId) continue;
+        if(distance(p.pos, d) < cellSize*1.2){
+          killPlayer(p, 'hit');
+          d.inFlight = false;
+          d.picked = true;
+          d.holder = null;
+          break;
+        }
+      }
+      // out of bounds?
+      if(d.x < -50 || d.x > worldW+50 || d.y < -50 || d.y > worldH+50){
+        d.inFlight = false;
+        d.picked = false;
+        d.holder = null;
+      }
+    } else if(d.picked && d.holder){
+      let holder = players.find(p=>p.id===d.holder);
+      if(holder && holder.alive){
+        d.x = holder.pos.x + holder.dir.x * cellSize * 1.2;
+        d.y = holder.pos.y + holder.dir.y * cellSize * 1.2;
+      } else {
+        d.picked = false; d.holder = null;
+      }
+    }
+  }
+
+  // Check for endgame
+  let aliveList = players.filter(p=>p.alive);
+  if(aliveList.length <= 1){
+    running = false;
+    if(aliveList.length === 1){
+      const win = aliveList[0];
+      showGameOver(win.id === localPlayerId ? 'You win! 🎉' : (win.name + ' wins'));
+    } else {
+      showGameOver('No winners');
+    }
+  }
+
+  updateHud();
+}
+
 // RENDER
 function render(){
-  // clear
+  // clear viewport background
   ctx.fillStyle = CONFIG.colors.background;
-  ctx.fillRect(0,0,w,h);
+  ctx.fillRect(0,0,vw,vh);
 
-  // camera: keep local player centered where possible
+  // compute camera: follow local player (center behind)
   let local = players.find(p=>p.id===localPlayerId);
-  let camX=0, camY=0;
-  // We'll implement simple full-canvas view (no world larger than canvas) — local POV is simulated by following bike drawing offset
-  // (Simplify: world == canvas so no offset necessary.)
+  if(local && local.alive){
+    // center player in screen
+    camera.x = clamp(local.pos.x - vw/2, 0, Math.max(0, worldW - vw));
+    camera.y = clamp(local.pos.y - vh/2, 0, Math.max(0, worldH - vh));
+  } else {
+    // if dead or not found, slowly pan to center
+    camera.x += ((worldW/2 - vw/2) - camera.x) * 0.05;
+    camera.y += ((worldH/2 - vh/2) - camera.y) * 0.05;
+  }
 
-  // compute storm radius
-  let stormFrac = clamp(stormElapsed / CONFIG.storm.totalTimeSeconds, 0, 1);
-  let currentStormRadius = stormMaxRadius * (1 - stormFrac) + stormMinRadius * stormFrac;
+  // helper world->screen
+  const sx = (wx)=> wx - camera.x;
+  const sy = (wy)=> wy - camera.y;
 
-  // draw trails
-  // iterate players and draw thick lines connecting their trail cell centers
-  players.forEach(p=>{
-    if(p.trail.length === 0) return;
+  // draw arena background grid faint
+  ctx.save();
+  ctx.fillStyle = '#03030a';
+  ctx.fillRect(0,0,vw,vh);
+  // draw faint grid for world
+  ctx.strokeStyle = 'rgba(255,255,255,0.02)';
+  ctx.lineWidth = 1;
+  for(let gx = - (camera.x % (cellSize*4)); gx < vw; gx += cellSize*4){
+    ctx.beginPath(); ctx.moveTo(gx,0); ctx.lineTo(gx,vh); ctx.stroke();
+  }
+  for(let gy = - (camera.y % (cellSize*4)); gy < vh; gy += cellSize*4){
+    ctx.beginPath(); ctx.moveTo(0,gy); ctx.lineTo(vw,gy); ctx.stroke();
+  }
+  ctx.restore();
+
+  // draw trails (iterate occupancy might be large; instead draw from player.trail arrays)
+  for(let p of players){
+    if(p.trail.length === 0) continue;
     ctx.lineWidth = CONFIG.trailThicknessCells * cellSize + 1;
     ctx.strokeStyle = p.color;
     ctx.beginPath();
@@ -469,77 +573,61 @@ function render(){
     for(let idx of p.trail){
       let c = idx % gridCols;
       let r = Math.floor(idx / gridCols);
-      let cp = cellToPixel(c,r);
-      if(!started){ ctx.moveTo(cp.x, cp.y); started=true; } else ctx.lineTo(cp.x, cp.y);
+      let cp = cellToPixelWorld(c,r);
+      let x = sx(cp.x), y = sy(cp.y);
+      if(!started){ ctx.moveTo(x,y); started=true; } else ctx.lineTo(x,y);
     }
     ctx.stroke();
-  });
-
-  // draw players as circles
-  players.forEach(p=>{
-    if(!p.alive) return;
-    ctx.fillStyle = p.id===localPlayerId ? CONFIG.colors.you : p.color;
-    ctx.beginPath();
-    ctx.arc(p.pos.x, p.pos.y, cellSize*0.9, 0, Math.PI*2);
-    ctx.fill();
-    // small eye indicating forward
-    ctx.fillStyle = '#000';
-    ctx.beginPath();
-    ctx.arc(p.pos.x + p.dir.x*cellSize*0.5, p.pos.y + p.dir.y*cellSize*0.5, cellSize*0.3, 0, Math.PI*2);
-    ctx.fill();
-  });
+  }
 
   // draw discs
-  discs.forEach(d=>{
-    if(d.picked && d.holder) return; // hidden
-    if(d.inFlight){
-      ctx.fillStyle = CONFIG.colors.disc;
-      ctx.beginPath();
-      ctx.arc(d.x, d.y, cellSize*0.7, 0, Math.PI*2);
-      ctx.fill();
-      // trail glow
-      ctx.strokeStyle = 'rgba(255,200,30,0.6)';
-      ctx.lineWidth = 2;
-      ctx.stroke();
-    } else if(!d.picked){
-      ctx.fillStyle = CONFIG.colors.disc;
-      ctx.beginPath();
-      ctx.arc(d.x, d.y, cellSize*0.9, 0, Math.PI*2);
-      ctx.fill();
-    }
-  });
+  for(let d of discs){
+    if(d.picked && d.holder) continue;
+    const screenX = sx(d.x), screenY = sy(d.y);
+    // only draw if in viewport
+    if(screenX < -40 || screenX > vw+40 || screenY < -40 || screenY > vh+40) continue;
+    ctx.fillStyle = CONFIG.colors.disc;
+    ctx.beginPath(); ctx.arc(screenX, screenY, d.radius, 0, Math.PI*2); ctx.fill();
+    ctx.strokeStyle = 'rgba(255,220,60,0.6)'; ctx.lineWidth = 2; ctx.stroke();
+  }
 
-  // draw storm: circular ring centered at canvas center
-  ctx.beginPath();
-  ctx.fillStyle = 'rgba(0,0,0,0)';
-  ctx.arc(w/2, h/2, currentStormRadius, 0, Math.PI*2);
-  // fill outside with semi-transparent fog
+  // draw players
+  for(let p of players){
+    if(!p.alive) continue;
+    let x = sx(p.pos.x), y = sy(p.pos.y);
+    // skip if not on screen to improve perf
+    if(x < -40 || x > vw+40 || y < -40 || y > vh+40) continue;
+    ctx.fillStyle = (p.id===localPlayerId ? CONFIG.colors.you : p.color);
+    ctx.beginPath(); ctx.arc(x,y, cellSize*0.9, 0, Math.PI*2); ctx.fill();
+    // forward eye
+    ctx.fillStyle = '#000';
+    ctx.beginPath(); ctx.arc(x + p.dir.x*cellSize*0.5, y + p.dir.y*cellSize*0.5, cellSize*0.28, 0, Math.PI*2); ctx.fill();
+  }
+
+  // draw storm overlay (circle centered in world)
+  const stormScreenX = sx(storm.center.x), stormScreenY = sy(storm.center.y);
   ctx.save();
-  ctx.globalCompositeOperation = 'source-over';
-  // draw overlay outside circle
+  // outer dim
   ctx.fillStyle = 'rgba(10,10,15,0.45)';
   ctx.beginPath();
-  ctx.rect(0,0,w,h);
-  ctx.arc(w/2,h/2,currentStormRadius,0,Math.PI*2,true);
+  ctx.rect(0,0,vw,vh);
+  ctx.arc(stormScreenX, stormScreenY, storm.radius, 0, Math.PI*2, true);
   ctx.fill('evenodd');
-  ctx.restore();
-  // storm rim
+  // rim
   ctx.lineWidth = 6;
   ctx.strokeStyle = CONFIG.colors.stormEdge;
-  ctx.beginPath();
-  ctx.arc(w/2,h/2,currentStormRadius,0,Math.PI*2);
-  ctx.stroke();
+  ctx.beginPath(); ctx.arc(stormScreenX, stormScreenY, storm.radius, 0, Math.PI*2); ctx.stroke();
+  ctx.restore();
 
-  // HUD overlay for local player disc (draw small icon near bottom-left)
-  // (Already text HUD exists.)
+  // HUD draws (already DOM)
 }
 
 // GAME LOOP
 function loop(now){
+  if(!lastTime) lastTime = now;
   let dtMs = now - lastTime;
   lastTime = now;
   acc += dtMs;
-  // update logic at fixed tickRate
   while(acc >= tickInterval){
     tick(tickInterval/1000);
     acc -= tickInterval;
@@ -548,19 +636,14 @@ function loop(now){
   requestAnimationFrame(loop);
 }
 
-// INPUT (touch/click steering)
+// INPUT
 function setupInput(){
-  // touch/mouse: tap left or right side to steer
   function handleTap(x){
     if(!running) return;
-    if(x < w/2) {
-      // left half -> turn left
-      let p = players.find(p=>p.id===localPlayerId);
-      if(p && p.alive) turnLeft(p);
-    } else {
-      let p = players.find(p=>p.id===localPlayerId);
-      if(p && p.alive) turnRight(p);
-    }
+    let p = players.find(pp=>pp.id===localPlayerId);
+    if(!p || !p.alive) return;
+    // determine screen center to choose left or right tap
+    if(x < vw/2) turnLeft(p); else turnRight(p);
   }
   canvas.addEventListener('touchstart', function(e){
     e.preventDefault();
@@ -571,47 +654,28 @@ function setupInput(){
     handleTap(e.clientX);
   });
 
-  // keyboard
   window.addEventListener('keydown', function(e){
-    if(!running) {
-      if(e.key === 'r' || e.key === 'R') resetGame();
+    if(!running){
+      if(e.key === 'Enter' || e.key === ' '){ startGame(); }
       return;
     }
-    let p = players.find(p=>p.id===localPlayerId);
+    let p = players.find(pp=>pp.id===localPlayerId);
     if(!p || !p.alive) return;
     if(e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') turnLeft(p);
     if(e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') turnRight(p);
     if(e.key === ' ' || e.key === 'Enter') throwDiscFromPlayer(p);
   });
 
-  // Throw button
-  document.getElementById('throwBtn').addEventListener('click', function(){
-    let p = players.find(p=>p.id===localPlayerId);
+  throwBtn.addEventListener('click', function(){
+    let p = players.find(pp=>pp.id===localPlayerId);
     if(!p || !p.alive) return;
-    if(!throwDiscFromPlayer(p)){
-      // if attempted but failed, maybe show quick flash
-      flashMessage('No disc to throw');
-    } else {
-      flashMessage('Disc thrown');
-    }
+    if(!throwDiscFromPlayer(p)) flashMessage('No disc to throw');
+    else flashMessage('Disc thrown');
   });
-
-  // Restart
-  document.getElementById('restartBtn').addEventListener('click', function(){
-    resetGame();
-  });
+  restartBtn.addEventListener('click', resetToMenu);
 }
 
-// small message display helpers
-let msgTimeout = null;
-function showMessage(t){
-  messageEl.style.pointerEvents = 'auto';
-  messageEl.style.background = 'rgba(0,0,0,0.35)';
-  messageEl.style.padding = '18px 22px';
-  messageEl.style.borderRadius = '12px';
-  messageEl.style.border = '1px solid rgba(0,255,255,.08)';
-  messageEl.innerHTML = '<div style="font-size:20px;font-weight:800">'+t+'</div><div style="font-size:12px;margin-top:6px">Press Restart to play again</div>';
-}
+// MESSAGES
 function flashMessage(t, ms=900){
   messageEl.style.pointerEvents = 'none';
   messageEl.style.background = 'rgba(0,0,0,0.26)';
@@ -623,47 +687,72 @@ function flashMessage(t, ms=900){
   msgTimeout = setTimeout(()=>{ messageEl.textContent=''; }, ms);
 }
 
-// Simple AI: occasionally try to pick up discs by steering toward nearest disc
-function aiBehavior() {
-  // every second or so, some bots attempt to move toward discs
-  players.forEach(p=>{
-    if(!p.alive || p.isHuman) return;
-    // if disc available and not holding one, sometimes steer toward nearest disc
-    if(!p.hasDisc && Math.random() < 0.12){
-      let available = discs.filter(d=>!d.picked && !d.inFlight);
-      if(available.length){
-        // find nearest
-        let nearest = available.reduce((a,b)=> (distance({x:p.pos.x,y:p.pos.y}, {x:a.x,y:a.y}) < distance({x:p.pos.x,y:p.pos.y},{x:b.x,y:b.y})) ? a : b);
-        // steer toward nearest by simple logic
-        if(Math.abs(nearest.x - p.pos.x) > Math.abs(nearest.y - p.pos.y)){
-          p.dir.x = nearest.x > p.pos.x ? 1 : -1; p.dir.y = 0;
-        } else {
-          p.dir.x = 0; p.dir.y = nearest.y > p.pos.y ? 1 : -1;
-        }
-      }
-    }
-  });
+// START / STOP / UI
+function showStart(){ startMenu.style.display = ''; }
+function hideStart(){ startMenu.style.display = 'none'; }
+function showGameOver(text){ gameOver.style.display = ''; gameOverTitle.textContent = 'Game Over'; winnerLine.textContent = text; }
+function hideGameOver(){ gameOver.style.display = 'none'; }
+function resetToMenu(){ running=false; showStart(); hideGameOver(); flashMessage(''); }
+
+// Main game controls for start
+function startGame(){
+  resetGameSetup();
+  // hide menus
+  hideStart();
+  hideGameOver();
+  // begin loop if not started
+  if(!lastTime) requestAnimationFrame(loop);
 }
 
-// periodic AI events
-setInterval(aiBehavior, 600);
+// Show a full-screen overlay winner screen
+function showGameOver(winnerText){
+  gameOverTitle.textContent = 'Game Over';
+  winnerLine.textContent = winnerText;
+  gameOver.style.display = '';
+  // show restart button in HUD too
+}
 
-// spawn more discs occasionally if low
+// Disc respawn logic periodically to keep disc availability
 setInterval(()=>{
-  if(discs.filter(d=>!d.picked && !d.inFlight).length < 2){
-    spawnDiscs(2);
+  if(!running) return;
+  // ensure enough discs exist relative to players
+  let alive = players.filter(p=>p.alive).length;
+  let target = Math.max(4, Math.floor(alive * CONFIG.baseDiscRatio));
+  let available = discs.filter(d=>!d.picked && !d.inFlight).length;
+  if(available < target){
+    spawnOneDisc();
+  } else if(Math.random() < 0.08){
+    // random occasional spawn
+    spawnOneDisc();
   }
-}, 5000);
+}, CONFIG.discRespawnInterval);
 
-// Boot sequence
-function start(){
+// Periodic AI nudge
+setInterval(()=>{ if(running) aiBehavior(); }, 600);
+
+// UI events
+btnPlay.addEventListener('click', startGame);
+btnRestart.addEventListener('click', startGame);
+btnRestart.addEventListener('touchstart', ()=>startGame());
+btnRestart.addEventListener('mousedown', ()=>startGame());
+btnRestart.addEventListener('click', ()=>{}); // ensure clickable
+btnRestart.addEventListener('keydown', ()=>{});
+btnRestart.addEventListener('keypress', ()=>{});
+btnRestart.style.cursor = 'pointer';
+btnPlay.style.cursor = 'pointer';
+btnRestart.style.userSelect = 'none';
+
+// Restart button top-right (duplicate)
+restartBtn.addEventListener('click', resetToMenu);
+
+// initial setup
+window.addEventListener('resize', ()=>{
   resize();
-  resetGame();
-  setupInput();
-  lastTime = performance.now();
-  requestAnimationFrame(loop);
-}
-start();
+});
+setupInput();
+resize();
+showStart();
+requestAnimationFrame(loop);
 
 </script>
 </body>
