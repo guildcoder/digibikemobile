@@ -4,7 +4,6 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
 <title>L I G H T R U N N E R</title>
-<link rel="manifest" href="manifest.json">
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap');
 
@@ -37,35 +36,15 @@
     background: rgba(0,0,0,0.6);
     text-align: center;
   }
-
-  #hud {
-    position: absolute;
-    top: 10px; left: 10px; right: 10px;
-    display: flex;
-    justify-content: space-between;
-    color: lime;
-    font-family: 'Share Tech Mono', monospace;
-    font-size: 20px;
-    pointer-events: none;
-  }
 </style>
 </head>
 <body>
 <canvas id="gameCanvas"></canvas>
 <div id="overlay">Swipe up or down to move.<br/>Tap to start</div>
-<div id="hud" style="display:none;">
-  <div id="score">Time: 0s</div>
-  <div id="storm">Storm: 60s</div>
-  <div id="players">Players: 100</div>
-</div>
 
 <script>
 const canvas = document.getElementById("gameCanvas");
 const ctx = canvas.getContext("2d");
-const hud = document.getElementById("hud");
-const scoreEl = document.getElementById("score");
-const stormEl = document.getElementById("storm");
-const playersEl = document.getElementById("players");
 
 let W, H;
 function resize() {
@@ -78,31 +57,22 @@ window.addEventListener("resize", resize);
 resize();
 
 // Game vars
-let player = { x: W*0.1, y: H/2, w: 40, h: 40, speed: 8 };
+let player = { x: W * 0.1, y: H/2, w: 40, h: 40, speed: 8 };
 let lanes = [H*0.3, H*0.5, H*0.7]; 
 let currentLane = 1;
 player.y = lanes[currentLane] - player.h/2;
 
 let obstacles = [];
-let powerups = [];
 let scrollY = 0;
 let gameOver = false;
 let started = false;
-let startTime = 0;
-let stormTime = 60; 
-let playersLeft = 100;
-let lastSpawn = 0;
-let lastPower = 0;
-let difficulty = 1;
-let shield = false;
 
-// Input
+// Input (swipe + tap)
 let touchStartY = null;
 canvas.addEventListener("touchstart", e => {
   if (!started) {
     started = true;
     document.getElementById("overlay").style.display = "none";
-    hud.style.display = "flex";
     resetGame();
     return;
   }
@@ -121,56 +91,31 @@ canvas.addEventListener("touchend", e => {
   touchStartY = null;
 });
 
-// Reset
+// Reset game
 function resetGame() {
   obstacles = [];
-  powerups = [];
   currentLane = 1;
   player.y = lanes[currentLane] - player.h/2;
   gameOver = false;
   lastSpawn = 0;
-  lastPower = 0;
-  difficulty = 1;
-  shield = false;
-  startTime = performance.now();
-  stormTime = 60;
-  playersLeft = 100;
   loop();
 }
 
-// Spawners
+// Obstacle spawn
+let lastSpawn = 0;
 function spawnObstacle() {
-  let lane = Math.floor(Math.random()*lanes.length);
+  let lane = Math.floor(Math.random() * lanes.length);
   obstacles.push({
-    x: W+50,
-    y: lanes[lane]-20,
+    x: W + 50,
+    y: lanes[lane] - 20,
     w: 40,
     h: 40
   });
 }
-function spawnPowerup() {
-  let lane = Math.floor(Math.random()*lanes.length);
-  powerups.push({
-    x: W+50,
-    y: lanes[lane]-20,
-    w: 30,
-    h: 30,
-    type: Math.random()<0.5?"shield":"slow"
-  });
-}
 
-// HUD update
-function updateHUD(elapsed) {
-  scoreEl.textContent = `Time: ${Math.floor(elapsed/1000)}s`;
-  stormEl.textContent = `Storm: ${Math.max(0,stormTime)}s`;
-  playersEl.textContent = `Players: ${playersLeft}`;
-}
-
-// Loop
+// Main loop
 function loop(ts) {
   if (gameOver) return;
-
-  let elapsed = ts - startTime;
 
   ctx.clearRect(0,0,W,H);
 
@@ -183,80 +128,33 @@ function loop(ts) {
   }
 
   // Player
-  ctx.fillStyle = shield ? "aqua" : "lime";
+  ctx.fillStyle = "lime";
   ctx.fillRect(player.x, player.y, player.w, player.h);
 
   // Obstacles
-  if (Math.random() < 0.02*difficulty) spawnObstacle();
+  if (Math.random() < 0.02) spawnObstacle();
   ctx.fillStyle = "red";
   obstacles.forEach(o => {
-    o.x -= 6*difficulty;
-    ctx.fillRect(o.x,o.y,o.w,o.h);
-  });
-
-  // Powerups
-  if (Math.random() < 0.003) spawnPowerup();
-  ctx.fillStyle = "yellow";
-  powerups.forEach(p => {
-    p.x -= 5;
-    ctx.fillRect(p.x,p.y,p.w,p.h);
+    o.x -= 6;
+    ctx.fillRect(o.x, o.y, o.w, o.h);
   });
 
   // Collision
   obstacles.forEach(o => {
-    if (player.x < o.x+o.w &&
-        player.x+player.w > o.x &&
-        player.y < o.y+o.h &&
-        player.y+player.h > o.y) {
-      if (shield) {
-        shield = false;
-        o.x = -100; 
-      } else {
-        endGame();
-      }
-    }
-  });
-  powerups.forEach(p => {
-    if (player.x < p.x+p.w &&
-        player.x+player.w > p.x &&
-        player.y < p.y+p.h &&
-        player.y+player.h > p.y) {
-      if (p.type==="shield") shield = true;
-      else difficulty *= 0.8;
-      p.x = -100;
+    if (player.x < o.x + o.w &&
+        player.x + player.w > o.x &&
+        player.y < o.y + o.h &&
+        player.y + player.h > o.y) {
+      gameOver = true;
+      document.getElementById("overlay").innerText = "GAME OVER\nTap to restart";
+      document.getElementById("overlay").style.display = "flex";
     }
   });
 
   // Remove off-screen
-  obstacles = obstacles.filter(o => o.x>-50);
-  powerups = powerups.filter(p => p.x>-50);
-
-  // Storm + players
-  if (elapsed % 1000 < 20 && stormTime>0) stormTime--;
-  if (elapsed % 1500 < 20 && playersLeft>1) playersLeft--;
-
-  // Difficulty scaling
-  if (elapsed>20000) difficulty = 1.5;
-  if (elapsed>40000) difficulty = 2;
-
-  // HUD
-  updateHUD(elapsed);
+  obstacles = obstacles.filter(o => o.x > -50);
 
   if (!gameOver) requestAnimationFrame(loop);
-}
-
-// End game
-function endGame() {
-  gameOver = true;
-  let survival = parseInt(scoreEl.textContent.replace(/\D/g,""));
-  let best = localStorage.getItem("best")||0;
-  if (survival > best) {
-    localStorage.setItem("best",survival);
-    best = survival;
-  }
-  document.getElementById("overlay").innerText = `GAME OVER\nTime: ${survival}s\nBest: ${best}s\nTap to restart`;
-  document.getElementById("overlay").style.display = "flex";
-  hud.style.display = "none";
 }
 </script>
 </body>
