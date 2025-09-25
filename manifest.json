@@ -1,0 +1,20 @@
+{
+  "name": "A Bloody Good Time",
+  "short_name": "ABGT",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#040404",
+  "theme_color": "#0b0b0b",
+  "icons": [
+    {
+      "src": "assets/app-icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "assets/app-icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
