@@ -1,0 +1,601 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+<title>Digibike Royale — Mobile Follow-Behind</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap');
+  html,body{height:100%;margin:0;background:#000;overflow:hidden;-webkit-touch-callout:none;-webkit-user-select:none;user-select:none;}
+  canvas{display:block;width:100%;height:100%;}
+  #hud{
+    position:absolute;left:8px;top:8px;color:#0ff;font-family:'Share Tech Mono',monospace;
+    text-shadow:0 0 8px rgba(0,255,255,0.08);z-index:20;
+  }
+  #centerMsg{
+    position:absolute;top:40%;left:50%;transform:translate(-50%,-50%);color:#0ff;font-family:'Share Tech Mono';
+    text-align:center;z-index:20;padding:10px;background:rgba(0,0,0,0.45);border-radius:8px;display:none;
+  }
+  #startBtn{
+    appearance:none;-webkit-appearance:none;border:2px solid #0ff;color:#001;padding:12px 18px;border-radius:8px;background:#0ff;font-weight:bold;
+    font-family:'Share Tech Mono';cursor:pointer;
+  }
+  /* simple on-screen arrow hints */
+  .touchHint{
+    position:absolute;bottom:18px;left:50%;transform:translateX(-50%);color:#fff;font-family:'Share Tech Mono';z-index:20;opacity:0.6;
+    background:rgba(255,255,255,0.04);padding:6px 10px;border-radius:8px;
+  }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="hud">Loading...</div>
+<div id="centerMsg">
+  <div style="font-size:28px;color:cyan;margin-bottom:8px">Digibike Royale</div>
+  <div style="margin-bottom:10px">Swipe left / right to steer • Tap to shoot</div>
+  <button id="startBtn">Start Match</button>
+</div>
+<div class="touchHint">Swipe left/right to dodge. Tap to fire if you have discs.</div>
+
+<script>
+/*
+Mobile follow-behind 3D Tron — single-file
+Key changes:
+ - Vertical fullscreen orientation (portrait). Player always moves forward (up the map).
+ - Controls: swipe L/R to change lateral velocity; tap to shoot.
+ - Faked 3D: trail points get scaled and drawn as tapered quads; camera follows behind player.
+ - Larger map and more opponents (tweak constants below).
+*/
+
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d', { alpha: false });
+let DPR = Math.max(1, window.devicePixelRatio || 1);
+function resize() {
+  DPR = Math.max(1, window.devicePixelRatio || 1);
+  canvas.width = Math.floor(window.innerWidth * DPR);
+  canvas.height = Math.floor(window.innerHeight * DPR);
+  canvas.style.width = window.innerWidth + 'px';
+  canvas.style.height = window.innerHeight + 'px';
+  ctx.setTransform(DPR,0,0,DPR,0,0);
+}
+window.addEventListener('resize', resize);
+resize();
+
+const hud = document.getElementById('hud');
+const centerMsg = document.getElementById('centerMsg');
+const startBtn = document.getElementById('startBtn');
+
+/// GAME TUNABLES
+const MAP_W = 6000;           // very wide world
+const MAP_H = 10000;          // very long (forward is decreasing Y)
+const PLAYER_SPEED = 3.6;     // forward speed (always)
+const LATERAL_SPEED = 5.5;    // how fast lateral moves when steering
+const BOT_COUNT = 70;         // more opponents
+const TRAIL_MAX = 160;        // how many points stored in trail
+const DISC_COUNT = 40;        // ammo pickups
+const PROJECTILE_SPEED = 10;
+const STORM_SHRINK_MS = 25000;
+const STORM_MOVE_MS = 4000;
+const SWIPE_THRESHOLD = 30;   // px
+const SCREEN_PAD = 60;        // padding in HUD/minimap
+
+// color set
+const COLORS = ['#00ffff','#ff2ea6','#ffd400','#7dff2a','#4ea8ff','#ff4545','#6affb2'];
+
+// GLOBALS
+let player, bots = [], pickups = [], projectiles = [], particles = [];
+let camera = { x:0, y:0, shake:0, zoom:1 };
+let running = false, lastTs = 0;
+let storm = { x:0, y: -MAP_H/2, w: MAP_W, h: MAP_H, shrinkTimer:0, moving:false, moveFrom:null, moveTo:null, t:0 };
+
+// UTIL
+function rand(min,max){ return min + Math.random() * (max-min); }
+function choose(arr){ return arr[Math.floor(Math.random()*arr.length)]; }
+function clamp(v,a,b){return Math.max(a,Math.min(b,v));}
+function dist(a,b){const dx=a.x-b.x, dy=a.y-b.y; return Math.sqrt(dx*dx+dy*dy);}
+
+// BIKE CLASS (player & bots)
+class Bike {
+  constructor(x,y,color,name,isBot=false){
+    this.x = x; this.y = y; this.color = color; this.name = name || 'Rider';
+    this.alive = true; this.isBot = !!isBot;
+    this.trail = []; // array of {x,y}
+    // movement: forward speed always positive (up in world -> decreasing y)
+    this.forwardSpeed = PLAYER_SPEED * (isBot ? (0.9 + Math.random()*0.3) : 1);
+    this.vx = 0; // lateral velocity: +right, -left
+    this.targetLaneX = null;
+    this.ammo = 0;
+    this.decisionTimer = rand(300,1200);
+    this.dt = 0;
+    this.killer = null;
+  }
+  update(dt){
+    if(!this.alive) return;
+    // forward motion (always moving)
+    this.y -= this.forwardSpeed * (dt/16.67); // dt-normalized to 60fps base
+    // lateral integration
+    this.x += this.vx * (dt/16.67);
+
+    // keep inside map
+    this.x = clamp(this.x, 20, MAP_W-20);
+    this.y = clamp(this.y, -MAP_H, MAP_H+200);
+
+    // store trail
+    this.trail.push({x:this.x, y:this.y});
+    if(this.trail.length > TRAIL_MAX) this.trail.shift();
+
+    // bots: simple lateral lane targeting & collision avoidance
+    if(this.isBot){
+      this.dt += dt;
+      if(this.dt > this.decisionTimer){
+        this.dt = 0; this.decisionTimer = rand(200,1000);
+        // pick a lateral target that tries to intercept someone ahead
+        // prefer targets in storm bounds
+        let others = [player, ...bots].filter(b=>b!==this && b.alive);
+        if(others.length){
+          let t = choose(others);
+          // aim to be slightly to left or right of their x
+          let offset = rand(-120,120);
+          this.targetLaneX = clamp(t.x + offset, 20, MAP_W-20);
+        } else {
+          this.targetLaneX = rand(20, MAP_W-20);
+        }
+      }
+      // steer toward target lane
+      if(this.targetLaneX !== null){
+        let dx = this.targetLaneX - this.x;
+        this.vx = clamp(dx * 0.12, -LATERAL_SPEED, LATERAL_SPEED);
+      } else {
+        // gentle random bob
+        this.vx += rand(-0.08,0.08);
+        this.vx = clamp(this.vx, -LATERAL_SPEED, LATERAL_SPEED);
+      }
+      // occasionally pick up or shoot if ammo
+      if(Math.random() < 0.001 && this.ammo > 0){
+        // shoot forward
+        projectiles.push(new Projectile(this.x, this.y-10, 0, -1, this.color, this));
+        this.ammo--;
+      }
+    } // bots end
+  } // update end
+
+  draw() {
+    if(!this.alive) return;
+    // draw tapered trail with perspective -- draw trail segments from older (far) to newer (near)
+    const tlen = this.trail.length;
+    for(let i=0;i<tlen-1;i++){
+      // older index i is further from player (bigger y difference); use scale factor
+      const p0 = this.trail[i];
+      const p1 = this.trail[i+1];
+      // compute relative camera space: distance from camera center (camera behind player)
+      let dz = (p0.y - camera.y) * 0.001; // scale factor for depth
+      let scale = clamp(1 - dz, 0.08, 1.4);
+      let w = 6 * scale;
+      ctx.fillStyle = this.color;
+      // simple rectangle for each point to save CPU — good enough for mobile
+      let sx = (p0.x - camera.x); let sy = (p0.y - camera.y);
+      ctx.fillRect(sx - w/2, sy - w/2, w, w);
+    }
+    // draw bike as a small rectangle with glow
+    const px = this.x - camera.x, py = this.y - camera.y;
+    ctx.fillStyle = this.color;
+    ctx.fillRect(px - 8, py - 12, 16, 16);
+    // name
+    ctx.font = "12px 'Share Tech Mono', monospace";
+    ctx.fillStyle = '#fff';
+    ctx.fillText(this.name, px - ctx.measureText(this.name).width/2, py - 18);
+  }
+}
+
+// Pickup (disc)
+class Pickup {
+  constructor(x,y){
+    this.x = x; this.y = y; this.radius = 8; this.col = '#fff';
+  }
+  draw() {
+    const sx = this.x - camera.x, sy = this.y - camera.y;
+    ctx.beginPath(); ctx.arc(sx, sy, this.radius, 0, Math.PI*2);
+    ctx.fillStyle = '#fff'; ctx.fill();
+    // inner glow
+    ctx.strokeStyle = 'rgba(255,255,255,0.12)'; ctx.lineWidth = 2;
+    ctx.stroke();
+  }
+}
+
+// Projectile
+class Projectile {
+  constructor(x,y,dirX,dirY,color,owner){
+    this.x = x; this.y = y; this.vx = (dirX||0) * PROJECTILE_SPEED; this.vy = (dirY||-1) * PROJECTILE_SPEED;
+    this.color = color; this.owner = owner; this.alive = true;
+  }
+  update(dt){
+    if(!this.alive) return;
+    this.x += this.vx * (dt/16.67);
+    this.y += this.vy * (dt/16.67);
+    // bounds
+    if(this.x < -100 || this.x > MAP_W + 100 || this.y < -MAP_H - 100 || this.y > MAP_H + 400) this.alive = false;
+    // collision with bikes (exclude owner)
+    let list = [player, ...bots].filter(b => b && b.alive && b !== this.owner);
+    for(let b of list){
+      if(Math.abs(this.x - b.x) < 12 && Math.abs(this.y - b.y) < 12){
+        b.alive = false;
+        b.killer = this.owner || null;
+        this.alive = false;
+        spawnParticles(b.x, b.y, b.color);
+      }
+    }
+  }
+  draw(){
+    if(!this.alive) return;
+    const sx = this.x - camera.x, sy = this.y - camera.y;
+    ctx.fillStyle = this.color;
+    ctx.beginPath(); ctx.arc(sx, sy, 5, 0, Math.PI*2); ctx.fill();
+  }
+}
+
+// Simple particle burst
+function spawnParticles(x,y,color){
+  for(let i=0;i<20;i++){
+    particles.push({
+      x:x + rand(-6,6), y:y + rand(-6,6),
+      vx: rand(-2,2), vy: rand(-2,2),
+      life: rand(30,80), color
+    });
+  }
+}
+function updateParticles(dt){
+  for(let i=particles.length-1;i>=0;i--){
+    let p = particles[i];
+    p.x += p.vx * (dt/16.67); p.y += p.vy * (dt/16.67);
+    p.life -= (dt/16.67);
+    if(p.life <= 0) particles.splice(i,1);
+  }
+}
+function drawParticles(){
+  ctx.globalAlpha = 1;
+  for(let p of particles){
+    ctx.fillStyle = p.color;
+    ctx.fillRect(p.x - camera.x, p.y - camera.y, 3, 3);
+  }
+}
+
+// init / spawn world
+function spawnWorld(name='Player', color='#00ffff'){
+  bots = [];
+  pickups = [];
+  projectiles = [];
+  particles = [];
+  // Player start somewhere near bottom-center of map
+  player = new Bike(MAP_W / 2 + rand(-200,200), MAP_H - 300, color, name, false);
+
+  // bots seeded across map behind and ahead
+  for(let i=0;i<BOT_COUNT;i++){
+    let bx = rand(100, MAP_W - 100);
+    let by = rand(MAP_H * 0.25, MAP_H - 200);
+    let b = new Bike(bx, by, choose(COLORS), choose(['BitCrusher','Neon','Grid','Pulse','Flash','Byte','Spark','Phantom']) + Math.floor(Math.random()*999), true);
+    // give some bots initial ammo randomly
+    if(Math.random() < 0.12) b.ammo = Math.floor(rand(1,4));
+    bots.push(b);
+  }
+
+  // pickups spread out
+  for(let i=0;i<DISC_COUNT;i++){
+    pickups.push(new Pickup(rand(80, MAP_W - 80), rand(200, MAP_H - 300)));
+  }
+
+  // storm initial
+  storm = { x: 200, y: MAP_H * 0.2, w: MAP_W - 400, h: MAP_H * 0.6, shrinkTimer: 0, moving:false, moveFrom:null, moveTo:null, t:0 };
+
+  camera.x = player.x - (canvas.width / DPR)/2;
+  camera.y = player.y + 220; // camera is behind player => y larger (down) than player
+  running = true;
+  lastTs = performance.now();
+  centerMsg.style.display = 'none';
+  loop(lastTs);
+}
+
+// SWIPE & TOUCH HANDLING (portrait, full-screen)
+let touchStart = null;
+function onTouchStart(e){
+  if(!running){ return; } // ignore while not running
+  const t = e.touches ? e.touches[0] : e;
+  touchStart = { x: t.clientX, y: t.clientY, t: performance.now() };
+}
+function onTouchEnd(e){
+  if(!running || !touchStart) return;
+  const t = (e.changedTouches && e.changedTouches[0]) || e;
+  const dx = t.clientX - touchStart.x, dy = t.clientY - touchStart.y, dt = performance.now() - touchStart.t;
+  // horizontal swipe
+  if(Math.abs(dx) > SWIPE_THRESHOLD && Math.abs(dx) > Math.abs(dy)){
+    // left or right swipe
+    if(dx < 0){
+      // left swipe: set a lateral velocity left
+      player.vx = -LATERAL_SPEED * (0.85 + Math.min(0.6, Math.abs(dx)/200));
+    } else {
+      player.vx = LATERAL_SPEED * (0.85 + Math.min(0.6, Math.abs(dx)/200));
+    }
+  } else {
+    // treat as tap — fire if ammo
+    if(player && player.alive && player.ammo > 0){
+      projectiles.push(new Projectile(player.x, player.y - 18, 0, -1, player.color, player));
+      player.ammo--;
+    } else {
+      // small nudge forward if no ammo (gives player some lateral adjustment incentive)
+      // small lateral correction if tap near edges
+      // tap-left area: nudge left; tap-right: nudge right
+      const bound = window.innerWidth;
+      if(t.clientX < bound * 0.35) player.vx = -LATERAL_SPEED * 0.6;
+      else if(t.clientX > bound * 0.65) player.vx = LATERAL_SPEED * 0.6;
+    }
+  }
+  touchStart = null;
+}
+canvas.addEventListener('touchstart', onTouchStart, {passive:true});
+canvas.addEventListener('touchend', onTouchEnd, {passive:true});
+canvas.addEventListener('mousedown', (e)=>{ onTouchStart(e); });
+canvas.addEventListener('mouseup', (e)=>{ onTouchEnd(e); });
+
+// simple minimap drawing
+function drawMinimap(){
+  const w = 140, h = 140;
+  const px = window.innerWidth - w - SCREEN_PAD, py = SCREEN_PAD;
+  ctx.save();
+  ctx.globalAlpha = 0.9;
+  ctx.fillStyle = 'rgba(0,0,0,0.6)';
+  ctx.fillRect(px, py, w, h);
+  ctx.strokeStyle = '#222'; ctx.strokeRect(px, py, w, h);
+  // storm rect
+  ctx.fillStyle = 'rgba(0,255,255,0.08)';
+  const sx = px + (storm.x / MAP_W) * w;
+  const sy = py + ((storm.y + MAP_H) / (MAP_H*2)) * h; // approximate world mapping
+  const sw = (storm.w / MAP_W) * w;
+  const sh = Math.max(4, (storm.h / MAP_H) * h);
+  ctx.fillRect(sx, sy, sw, sh);
+  // bikes
+  const list = [player, ...bots];
+  for(let b of list){
+    if(!b || !b.alive) continue;
+    const bx = px + (b.x / MAP_W) * w;
+    const by = py + ((b.y + MAP_H) / (MAP_H*2)) * h;
+    ctx.fillStyle = b.color;
+    ctx.fillRect(bx-2, by-2, 4, 4);
+  }
+  ctx.restore();
+}
+
+// COLLISIONS: bike hitting any other's trail (or their own older trail)
+function detectTrailCollisions(){
+  // For each alive bike, test its current position against all trail points of others
+  const list = [player, ...bots].filter(b=>b && b.alive);
+  for(let b of list){
+    for(let other of [player, ...bots]){
+      if(!other || !other.trail || other.trail.length < 6) continue;
+      // skip checking against very recent points of same bike to avoid immediate self-collision
+      let cutoff = (other === b) ? Math.max(0, other.trail.length - 14) : 0;
+      for(let i=cutoff;i<other.trail.length;i++){
+        const t = other.trail[i];
+        if(Math.abs(b.x - t.x) < 10 && Math.abs(b.y - t.y) < 10 && b !== other) {
+          // collision with another's trail
+          b.alive = false;
+          b.killer = other;
+          spawnParticles(b.x, b.y, b.color);
+        } else if (Math.abs(b.x - t.x) < 9 && Math.abs(b.y - t.y) < 9 && b === other && i < other.trail.length - 6){
+          // self-collision with older trail
+          b.alive = false;
+          b.killer = other;
+          spawnParticles(b.x, b.y, b.color);
+        }
+      }
+    }
+  }
+}
+
+// STORM update — shrinks and moves; kills bikes outside
+function updateStorm(dt){
+  storm.shrinkTimer += dt;
+  if(storm.shrinkTimer > STORM_SHRINK_MS){
+    // start moving + shrink
+    storm.shrinkTimer = 0;
+    storm.moveFrom = { x: storm.x, y: storm.y, w: storm.w, h: storm.h };
+    // new center smaller
+    const newPad = 200 + Math.random() * 600;
+    const nx = clamp(rand(100, MAP_W - 100 - storm.w * 0.6), 80, MAP_W-200);
+    storm.moveTo = { x: nx, y: clamp(rand(-MAP_H+100, MAP_H - 200), -MAP_H+50, MAP_H-200), w: storm.w * 0.7, h: storm.h * 0.7 };
+    storm.t = 0; storm.moving = true;
+  }
+  if(storm.moving){
+    storm.t += dt / STORM_MOVE_MS;
+    if(storm.t >= 1){
+      storm.moving = false;
+      storm = Object.assign({}, storm.moveTo, { shrinkTimer: 0, moving:false, moveFrom:null, moveTo:null, t:0 });
+    } else {
+      // lerp
+      const f = storm.t;
+      storm.x = storm.moveFrom.x + (storm.moveTo.x - storm.moveFrom.x) * f;
+      storm.y = storm.moveFrom.y + (storm.moveTo.y - storm.moveFrom.y) * f;
+      storm.w = storm.moveFrom.w + (storm.moveTo.w - storm.moveFrom.w) * f;
+      storm.h = storm.moveFrom.h + (storm.moveTo.h - storm.moveFrom.h) * f;
+    }
+  }
+
+  // kill bikes outside storm bounds (simple inclusion test)
+  let all = [player, ...bots];
+  for(let b of all){
+    if(!b || !b.alive) continue;
+    if(b.x < storm.x || b.x > storm.x + storm.w || b.y < storm.y - 20 || b.y > storm.y + storm.h + 20){
+      b.alive = false;
+      b.killer = null;
+      spawnParticles(b.x, b.y, b.color);
+    }
+  }
+}
+
+// pickup collection
+function checkPickups(){
+  for(let i=pickups.length-1;i>=0;i--){
+    let p = pickups[i];
+    // check all bikes
+    for(let b of [player, ...bots]){
+      if(!b || !b.alive) continue;
+      if(Math.abs(b.x - p.x) < 14 && Math.abs(b.y - p.y) < 14){
+        b.ammo = (b.ammo || 0) + 1;
+        // respawn pickup at further ahead spot so matches vertical progression
+        pickups.splice(i,1);
+        pickups.push(new Pickup(rand(80, MAP_W - 80), rand(-MAP_H + 200, MAP_H - 200)));
+        break;
+      }
+    }
+  }
+}
+
+// GAME LOOP
+function loop(ts){
+  if(!running) return;
+  let dt = ts - lastTs;
+  lastTs = ts;
+  // clamp dt to avoid huge steps on tab switching
+  dt = Math.min(60, dt);
+
+  // update: player first
+  if(player && player.alive){
+    player.update(dt);
+    // friction on lateral when no input
+    player.vx *= 0.96;
+  }
+  for(let b of bots) b.update(dt);
+
+  // projectiles
+  for(let i=projectiles.length-1;i>=0;i--){
+    let pr = projectiles[i];
+    pr.update(dt);
+    if(!pr.alive) projectiles.splice(i,1);
+  }
+
+  // pickups collisions
+  checkPickups();
+
+  // detect trail collisions
+  detectTrailCollisions();
+
+  // storm update
+  updateStorm(dt);
+
+  // particles
+  updateParticles(dt);
+
+  // camera follows behind the player, a bit smoothed and with perspective offset
+  if(player && player.alive){
+    // camera sits behind player (in screen coordinates we want player in lower center)
+    let targetCamX = player.x - (canvas.width / DPR)/2;
+    let targetCamY = player.y + 220;
+    camera.x += (targetCamX - camera.x) * 0.12;
+    camera.y += (targetCamY - camera.y) * 0.12;
+  } else {
+    // spectate first alive or show menu
+    let alive = [player, ...bots].find(b=>b && b.alive);
+    if(alive){
+      // follow alive
+      camera.x += (alive.x - (canvas.width / DPR)/2 - camera.x) * 0.08;
+      camera.y += (alive.y + 220 - camera.y) * 0.08;
+    } else {
+      // match end - reveal center message
+      running = false;
+      centerMsg.style.display = 'block';
+      centerMsg.innerHTML = `<div style="font-size:22px;color:#0ff;margin-bottom:8px">Match Over</div><div style="color:white;margin-bottom:10px">No survivors</div><button id="restart" style="padding:10px;border-radius:8px;background:#0ff;border:none;color:#001;font-weight:bold">Restart</button>`;
+      document.getElementById('restart').addEventListener('click', ()=>startGame());
+      return;
+    }
+  }
+
+  // draw
+  draw();
+
+  // check winning condition
+  const aliveCount = [player, ...bots].filter(b=>b && b.alive).length;
+  hud.innerText = `Alive: ${aliveCount}  •  Ammo: ${player?player.ammo:0}`;
+
+  // if only one alive, end and show winner
+  if(aliveCount <= 1){
+    running = false;
+    let winner = [player, ...bots].find(b=>b && b.alive);
+    centerMsg.style.display = 'block';
+    centerMsg.innerHTML = `<div style="font-size:22px;color:#0ff;margin-bottom:6px">${winner ? winner.name : 'No one'} wins!</div>
+      <div style="color:white;margin-bottom:10px">Tap restart to play again</div>
+      <button id="restart" style="padding:10px;border-radius:8px;background:#0ff;border:none;color:#001;font-weight:bold">Restart</button>`;
+    document.getElementById('restart').addEventListener('click', ()=>startGame());
+    return;
+  }
+
+  requestAnimationFrame(loop);
+}
+
+// DRAW world with simple faux-3D
+function draw(){
+  // background
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0,0, canvas.width / DPR, canvas.height / DPR);
+
+  // draw distant grid/ground to suggest depth
+  drawBackgroundGrid();
+
+  // draw pickups
+  for(let p of pickups) p.draw();
+
+  // draw trails & bikes: draw bots and player combined for depth order by y
+  const all = [player, ...bots].filter(b=>b && b.trail && b.trail.length>0);
+  // sort by y to draw far -> near
+  all.sort((a,b)=> (a.trail[0].y || a.y) - (b.trail[0].y || b.y));
+  for(let b of all) b.draw();
+
+  // projectiles and particles
+  for(let pr of projectiles) pr.draw();
+  drawParticles();
+
+  // storm box (on world)
+  ctx.save();
+  ctx.strokeStyle = 'rgba(0,255,255,0.22)';
+  ctx.lineWidth = 3;
+  ctx.strokeRect(storm.x - camera.x, storm.y - camera.y, storm.w, storm.h);
+  ctx.restore();
+
+  // minimap
+  drawMinimap();
+}
+
+// a simple repeating grid with perspective lines
+function drawBackgroundGrid(){
+  const W = canvas.width / DPR, H = canvas.height / DPR;
+  ctx.save();
+  ctx.translate(0,0);
+  // draw faint repeating horizontal lines anchored to world y positions
+  ctx.strokeStyle = 'rgba(255,255,255,0.02)';
+  ctx.lineWidth = 1;
+  // we want world y positions from camera.y - some range to camera.y + range
+  const startY = Math.floor((camera.y - H) / 200) * 200;
+  for(let wy = startY; wy < camera.y + H + 400; wy += 200){
+    const sy = wy - camera.y;
+    // small parallax: farther ahead (smaller wy) drawn thinner
+    ctx.globalAlpha = clamp(1 - ( (camera.y - wy) / 1000), 0.06, 0.28);
+    ctx.beginPath();
+    ctx.moveTo(-100 - camera.x, sy);
+    ctx.lineTo(W + 100 - camera.x, sy);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+// START BUTTON
+centerMsg.style.display = 'block';
+startBtn.addEventListener('click', ()=>startGame('You', choose(COLORS)));
+
+/// helpful keyboard fallback for desktop testing:
+window.addEventListener('keydown', (e)=>{
+  if(e.key === 'r'){ startGame('You', choose(COLORS)); }
+  if(e.key === 'ArrowLeft'){ if(player) player.vx = -LATERAL_SPEED; }
+  if(e.key === 'ArrowRight'){ if(player) player.vx = LATERAL_SPEED; }
+  if(e.key === ' '){ if(player && player.ammo>0) { projectiles.push(new Projectile(player.x, player.y - 18, 0, -1, player.color, player)); player.ammo--; } }
+});
+
+</script>
+</body>
+</html>
