@@ -4,6 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
 <title>L I G H T R U N N E R</title>
+<link rel="manifest" href="manifest.json">
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap');
 
@@ -14,24 +15,69 @@
     background: black;
     height: 100%;
     width: 100%;
+    font-family: 'Share Tech Mono', monospace;
+    color: cyan;
   }
 
   canvas {
-    display: block;
-    margin: 0 auto;
+    display: none;
     background: linear-gradient(to bottom, #000 60%, #222);
     touch-action: none;
+  }
+
+  #menu {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    background: black;
+    text-align: center;
+  }
+
+  #title {
+    font-size: 42px;
+    animation: float 2s ease-in-out infinite;
+    margin-bottom: 30px;
+  }
+
+  @keyframes float {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-10px); }
+  }
+
+  #menu input, #menu button {
+    margin: 10px;
+    padding: 10px;
+    background: #111;
+    border: 1px solid cyan;
+    color: cyan;
+    font-size: 18px;
+  }
+
+  .color-select {
+    display: flex;
+    gap: 10px;
+    margin: 15px 0;
+  }
+
+  .color-box {
+    width: 30px;
+    height: 30px;
+    border: 2px solid white;
+    cursor: pointer;
   }
 
   #overlay {
     position: absolute;
     top: 0; left: 0;
     width: 100%; height: 100%;
-    display: flex;
+    display: none;
     justify-content: center;
     align-items: center;
     color: cyan;
-    font-family: 'Share Tech Mono', monospace;
     font-size: 28px;
     background: rgba(0,0,0,0.6);
     text-align: center;
@@ -39,12 +85,28 @@
 </style>
 </head>
 <body>
+<div id="menu">
+  <div id="title">L I G H T R U N N E R</div>
+  <input id="playerName" type="text" placeholder="Enter Name">
+  <div class="color-select">
+    <div class="color-box" style="background:red" data-color="red"></div>
+    <div class="color-box" style="background:lime" data-color="lime"></div>
+    <div class="color-box" style="background:cyan" data-color="cyan"></div>
+    <div class="color-box" style="background:yellow" data-color="yellow"></div>
+  </div>
+  <button id="playBtn">PLAY</button>
+</div>
+
 <canvas id="gameCanvas"></canvas>
-<div id="overlay">Swipe up or down to move.<br/>Tap to start</div>
+<div id="overlay">GAME OVER<br/>Tap to restart</div>
 
 <script>
 const canvas = document.getElementById("gameCanvas");
 const ctx = canvas.getContext("2d");
+const overlay = document.getElementById("overlay");
+const menu = document.getElementById("menu");
+const playBtn = document.getElementById("playBtn");
+const nameInput = document.getElementById("playerName");
 
 let W, H;
 function resize() {
@@ -56,65 +118,55 @@ function resize() {
 window.addEventListener("resize", resize);
 resize();
 
-// Game vars
-let player = { x: W * 0.1, y: H/2, w: 40, h: 40, speed: 8 };
-let lanes = [H*0.3, H*0.5, H*0.7]; 
+// --- GAME VARS ---
+let player = { x: 0, y: 0, w: 40, h: 40, color: "lime" };
+let lanes = [];
 let currentLane = 1;
-player.y = lanes[currentLane] - player.h/2;
-
 let obstacles = [];
 let scrollY = 0;
 let gameOver = false;
 let started = false;
 
-// Input (swipe + tap)
-let touchStartY = null;
-canvas.addEventListener("touchstart", e => {
-  if (!started) {
-    started = true;
-    document.getElementById("overlay").style.display = "none";
-    resetGame();
-    return;
-  }
-  if (gameOver) {
-    resetGame();
-    return;
-  }
-  touchStartY = e.touches[0].clientY;
-});
-canvas.addEventListener("touchend", e => {
-  if (!touchStartY) return;
-  let dy = e.changedTouches[0].clientY - touchStartY;
-  if (dy < -30 && currentLane > 0) currentLane--; 
-  if (dy > 30 && currentLane < lanes.length-1) currentLane++;
-  player.y = lanes[currentLane] - player.h/2;
-  touchStartY = null;
+// --- COLOR PICKER ---
+document.querySelectorAll(".color-box").forEach(box=>{
+  box.addEventListener("click", ()=>{
+    player.color = box.dataset.color;
+  });
 });
 
-// Reset game
-function resetGame() {
-  obstacles = [];
+// --- START GAME ---
+playBtn.addEventListener("click", ()=>{
+  menu.style.display = "none";
+  canvas.style.display = "block";
+  overlay.style.display = "none";
+  startGame();
+});
+
+function startGame() {
+  lanes = [H*0.3, H*0.5, H*0.7];
   currentLane = 1;
-  player.y = lanes[currentLane] - player.h/2;
+  player.x = W*0.1;
+  player.y = lanes[currentLane]-player.h/2;
+  obstacles = [];
   gameOver = false;
-  lastSpawn = 0;
+  started = true;
   loop();
 }
 
-// Obstacle spawn
-let lastSpawn = 0;
-function spawnObstacle() {
-  let lane = Math.floor(Math.random() * lanes.length);
-  obstacles.push({
-    x: W + 50,
-    y: lanes[lane] - 20,
-    w: 40,
-    h: 40
-  });
-}
+// --- CONTROLS (tap left/right) ---
+canvas.addEventListener("touchstart", e=>{
+  if (gameOver) {
+    startGame();
+    return;
+  }
+  let x = e.touches[0].clientX;
+  if (x < W/2 && currentLane > 0) currentLane--; 
+  else if (x >= W/2 && currentLane < lanes.length-1) currentLane++;
+  player.y = lanes[currentLane]-player.h/2;
+});
 
-// Main loop
-function loop(ts) {
+// --- LOOP ---
+function loop() {
   if (gameOver) return;
 
   ctx.clearRect(0,0,W,H);
@@ -122,39 +174,43 @@ function loop(ts) {
   // Background scroll
   scrollY += 5;
   ctx.fillStyle = "cyan";
-  for (let i=0; i<20; i++) {
+  for (let i=0;i<20;i++) {
     let y = (i*H/20 + scrollY) % H;
     ctx.fillRect(W/2-2, y, 4, 20);
   }
 
   // Player
-  ctx.fillStyle = "lime";
+  ctx.fillStyle = player.color;
   ctx.fillRect(player.x, player.y, player.w, player.h);
 
   // Obstacles
-  if (Math.random() < 0.02) spawnObstacle();
+  if (Math.random()<0.02) spawnObstacle();
   ctx.fillStyle = "red";
-  obstacles.forEach(o => {
+  obstacles.forEach(o=>{
     o.x -= 6;
-    ctx.fillRect(o.x, o.y, o.w, o.h);
+    ctx.fillRect(o.x,o.y,o.w,o.h);
   });
 
   // Collision
-  obstacles.forEach(o => {
-    if (player.x < o.x + o.w &&
-        player.x + player.w > o.x &&
-        player.y < o.y + o.h &&
-        player.y + player.h > o.y) {
+  obstacles.forEach(o=>{
+    if (player.x < o.x+o.w &&
+        player.x+player.w > o.x &&
+        player.y < o.y+o.h &&
+        player.y+player.h > o.y) {
       gameOver = true;
-      document.getElementById("overlay").innerText = "GAME OVER\nTap to restart";
-      document.getElementById("overlay").style.display = "flex";
+      overlay.style.display = "flex";
     }
   });
 
-  // Remove off-screen
-  obstacles = obstacles.filter(o => o.x > -50);
+  // Cleanup
+  obstacles = obstacles.filter(o=>o.x>-50);
 
   if (!gameOver) requestAnimationFrame(loop);
+}
+
+function spawnObstacle() {
+  let lane = Math.floor(Math.random()*lanes.length);
+  obstacles.push({ x: W+50, y: lanes[lane]-20, w:40, h:40 });
 }
 </script>
 </body>
