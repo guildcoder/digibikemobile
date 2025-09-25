@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>LIGHTRUNNER</title>
+<title>Tron Light Cycle with Discs</title>
 <style>
   body { margin:0; overflow:hidden; background:black; }
   canvas { display:block; }
@@ -18,159 +18,221 @@ const ctx = canvas.getContext('2d');
 canvas.width = window.innerWidth;
 canvas.height = window.innerHeight;
 
+const horizon = canvas.height*0.3;
+const gridSpacing = 50;
+
 const player = {
-  x: canvas.width / 2,
-  y: canvas.height * 0.7,
+  x: canvas.width/2,
+  y: canvas.height*0.8,
   size: 15,
   color: 'cyan',
   trail: [],
   speed: 6,
-  direction: { x: 0, y: 0 }
+  discs: 0
 };
 
-let bots = [];
+const bots = [];
+const discs = []; // discs on grid
+const flyingDiscs = []; // discs thrown by player
+
 let botSpeed = 4;
-let botTrailLength = 20;
+let botTrailLength = 30;
+let botSpawnTimer = 0;
+let discSpawnTimer = 0;
+let gridOffset = 0;
 let score = 0;
 let gameOver = false;
-const perimeter = 50; // red walls thickness
 
 // Input
 let keys = {};
-document.addEventListener('keydown', e => keys[e.key] = true);
-document.addEventListener('keyup', e => keys[e.key] = false);
+document.addEventListener('keydown', e => keys[e.key]=true);
+document.addEventListener('keyup', e => keys[e.key]=false);
 
-// Helpers
+// Double-tap detection
+let lastTap = 0;
+canvas.addEventListener('click',()=>{
+  const now = Date.now();
+  if(now-lastTap<300 && player.discs>0){
+    flyingDiscs.push({x:player.x, y:player.y, size:10, color:'yellow'});
+    player.discs--;
+  }
+  lastTap = now;
+});
+
+// Draw scrolling grid
 function drawGrid() {
-  // Ground grid (tilted perspective)
-  ctx.strokeStyle = 'lime';
-  ctx.lineWidth = 1;
-  const horizon = canvas.height * 0.4;
+  ctx.strokeStyle='lime';
+  ctx.lineWidth=1;
+  gridOffset += 6;
 
-  // vertical lines converging
-  for (let i=0; i<canvas.width; i+=50){
+  // Horizontal lines
+  for(let i=0;i<canvas.height;i+=gridSpacing){
+    const y = i + (gridOffset % gridSpacing);
+    const scale = 1 - (y - horizon)/(canvas.height-horizon);
+    if(scale<=0) continue;
+    ctx.beginPath();
+    const left = canvas.width*0.25*(1-scale);
+    const right = canvas.width - canvas.width*0.25*(1-scale);
+    ctx.moveTo(left,y);
+    ctx.lineTo(right,y);
+    ctx.stroke();
+  }
+
+  // Vertical lines
+  for(let i=0;i<canvas.width;i+=gridSpacing){
     ctx.beginPath();
     ctx.moveTo(i, canvas.height);
-    ctx.lineTo(canvas.width/2 + (i-canvas.width/2)*0.3, horizon);
-    ctx.stroke();
-  }
-
-  // horizontal lines
-  for (let j=0; j<canvas.height-horizon; j+=50){
-    const y = canvas.height - j;
-    ctx.beginPath();
-    ctx.moveTo(0, y);
-    ctx.lineTo(canvas.width, y);
-    ctx.stroke();
-  }
-
-  // Vertical sky lines
-  ctx.strokeStyle = '#0ff';
-  for (let i=0;i<canvas.width;i+=100){
-    ctx.beginPath();
-    ctx.moveTo(i,0);
-    ctx.lineTo(i,horizon);
+    ctx.lineTo(canvas.width/2, horizon);
     ctx.stroke();
   }
 }
 
+// Draw perimeter walls
 function drawPerimeter() {
-  ctx.fillStyle = 'red';
-  ctx.fillRect(0,0,canvas.width,perimeter); // top
-  ctx.fillRect(0,canvas.height-perimeter,canvas.width,perimeter); // bottom
-  ctx.fillRect(0,0,perimeter,canvas.height); // left
-  ctx.fillRect(canvas.width-perimeter,0,perimeter,canvas.height); // right
+  ctx.fillStyle='red';
+  ctx.fillRect(0,0,canvas.width,10);
+  ctx.fillRect(0,canvas.height-10,canvas.width,10);
+  ctx.fillRect(0,0,10,canvas.height);
+  ctx.fillRect(canvas.width-10,0,10,canvas.height);
 }
 
-function updatePlayer() {
-  if (keys['ArrowUp']) player.y -= player.speed;
-  if (keys['ArrowDown']) player.y += player.speed;
-  if (keys['ArrowLeft']) player.x -= player.speed;
-  if (keys['ArrowRight']) player.x += player.speed;
+// Update player
+function updatePlayer(){
+  if(keys['ArrowLeft']) player.x -= player.speed;
+  if(keys['ArrowRight']) player.x += player.speed;
+  if(keys['ArrowUp']) player.y -= player.speed;
+  if(keys['ArrowDown']) player.y += player.speed;
 
-  // Keep inside perimeter
-  player.x = Math.max(perimeter, Math.min(canvas.width - perimeter, player.x));
-  player.y = Math.max(perimeter, Math.min(canvas.height - perimeter, player.y));
+  player.x = Math.max(10, Math.min(canvas.width-10, player.x));
+  player.y = Math.max(10, Math.min(canvas.height-10, player.y));
 
-  // Add to trail
   player.trail.push({x:player.x, y:player.y});
-  if (player.trail.length > 50) player.trail.shift();
+  if(player.trail.length>50) player.trail.shift();
 }
 
-function drawPlayer() {
-  // trail
-  for (let i=0;i<player.trail.length;i++){
-    const t = player.trail[i];
+// Draw player with trail
+function drawPlayer(){
+  player.trail.forEach((t,i)=>{
     ctx.fillStyle = `rgba(0,255,255,${i/player.trail.length})`;
-    ctx.fillRect(t.x-5, t.y-5, player.size, player.size);
-  }
-  // bike
+    ctx.fillRect(t.x-5,t.y-5,player.size,player.size);
+  });
   ctx.fillStyle = player.color;
-  ctx.fillRect(player.x-player.size/2, player.y-player.size/2, player.size, player.size);
+  ctx.fillRect(player.x-player.size/2,player.y-player.size/2,player.size,player.size);
 }
 
-function spawnBot() {
-  const side = Math.floor(Math.random()*4);
-  let x,y;
-  if(side===0){x=perimeter+10; y=Math.random()*(canvas.height-2*perimeter)+perimeter;}
-  if(side===1){x=canvas.width-perimeter-10; y=Math.random()*(canvas.height-2*perimeter)+perimeter;}
-  if(side===2){y=perimeter+10; x=Math.random()*(canvas.width-2*perimeter)+perimeter;}
-  if(side===3){y=canvas.height-perimeter-10; x=Math.random()*(canvas.width-2*perimeter)+perimeter;}
-  bots.push({x,y,size:15,color:'magenta',trail:[],target:player});
+// Spawn bots
+function spawnBot(){
+  const side = Math.random()<0.5 ? 10 : canvas.width-10;
+  const y = horizon+20;
+  bots.push({x:side, y:y, size:15, color:'magenta', trail:[]});
 }
 
-function updateBots() {
+// Spawn discs
+function spawnDisc(){
+  const x = Math.random()*(canvas.width-20)+10;
+  const y = horizon+20;
+  discs.push({x,y,size:10,color:'yellow'});
+}
+
+// Update bots
+function updateBots(){
   bots.forEach(bot=>{
-    // simple AI: move toward player
-    const dx = bot.target.x - bot.x;
-    const dy = bot.target.y - bot.y;
-    const dist = Math.sqrt(dx*dx + dy*dy);
-    bot.x += (dx/dist)*botSpeed;
-    bot.y += (dy/dist)*botSpeed;
+    bot.y += 6; // forward motion
+    if(bot.x < player.x) bot.x += botSpeed*0.5;
+    if(bot.x > player.x) bot.x -= botSpeed*0.5;
 
-    // trail
-    bot.trail.push({x:bot.x, y:bot.y});
+    bot.trail.push({x:bot.x,y:bot.y});
     if(bot.trail.length>botTrailLength) bot.trail.shift();
   });
 
-  // remove bots that are past the player
-  bots = bots.filter(bot => bot.y < canvas.height);
+  for(let i=bots.length-1;i>=0;i--){
+    if(bots[i].y>canvas.height) bots.splice(i,1);
+  }
 }
 
-function drawBots() {
+// Draw bots with trails
+function drawBots(){
   bots.forEach(bot=>{
     bot.trail.forEach((t,i)=>{
-      ctx.fillStyle = `rgba(255,0,255,${i/bot.trail.length})`;
+      ctx.fillStyle=`rgba(255,0,255,${i/bot.trail.length})`;
       ctx.fillRect(t.x-5,t.y-5,bot.size,bot.size);
     });
-    ctx.fillStyle = bot.color;
+    ctx.fillStyle=bot.color;
     ctx.fillRect(bot.x-bot.size/2, bot.y-bot.size/2, bot.size, bot.size);
   });
 }
 
-function checkCollisions() {
-  bots.forEach(bot=>{
-    const dx = player.x - bot.x;
-    const dy = player.y - bot.y;
+// Update discs
+function updateDiscs(){
+  // scroll discs forward
+  discs.forEach(d=>d.y+=6);
+  for(let i=discs.length-1;i>=0;i--){
+    // collect
+    const dx = player.x - discs[i].x;
+    const dy = player.y - discs[i].y;
     const dist = Math.sqrt(dx*dx + dy*dy);
-    if(dist < player.size){
-      gameOver = true;
+    if(dist<player.size){
+      player.discs++;
+      discs.splice(i,1);
+    } else if(discs[i].y>canvas.height) discs.splice(i,1);
+  }
+
+  // update flying discs
+  flyingDiscs.forEach(fd=>fd.y -= 15);
+  for(let i=flyingDiscs.length-1;i>=0;i--){
+    const fd = flyingDiscs[i];
+    for(let j=bots.length-1;j>=0;j--){
+      const dx = fd.x - bots[j].x;
+      const dy = fd.y - bots[j].y;
+      const dist = Math.sqrt(dx*dx + dy*dy);
+      if(dist < fd.size){
+        bots.splice(j,1);
+        flyingDiscs.splice(i,1);
+        break;
+      }
     }
+    if(fd && fd.y<0) flyingDiscs.splice(i,1);
+  }
+}
+
+// Draw discs
+function drawDiscs(){
+  discs.forEach(d=>{
+    ctx.fillStyle=d.color;
+    ctx.fillRect(d.x-d.size/2,d.y-d.size/2,d.size,d.size);
+  });
+  flyingDiscs.forEach(fd=>{
+    ctx.fillStyle=fd.color;
+    ctx.beginPath();
+    ctx.arc(fd.x,fd.y,fd.size,0,Math.PI*2);
+    ctx.fill();
   });
 }
 
-function drawScore() {
-  ctx.fillStyle='white';
-  ctx.font='24px Arial';
-  ctx.fillText(`Score: ${score}`,20,40);
+// Check collisions
+function checkCollisions(){
+  bots.forEach(bot=>{
+    const dx = player.x - bot.x;
+    const dy = player.y - bot.y;
+    const dist = Math.sqrt(dx*dx+dy*dy);
+    if(dist < player.size) gameOver=true;
+  });
 }
 
-function gameLoop() {
+// Draw score and discs
+function drawScore(){
+  ctx.fillStyle='white';
+  ctx.font='24px Arial';
+  ctx.fillText(`Score: ${score}  |  Discs: ${player.discs}`,20,40);
+}
+
+// Game loop
+function gameLoop(){
   if(gameOver){
     ctx.fillStyle='white';
     ctx.font='48px Arial';
-    ctx.fillText('GAME OVER', canvas.width/2-150, canvas.height/2);
-    ctx.fillText(`Score: ${score}`, canvas.width/2-80, canvas.height/2+60);
+    ctx.fillText('GAME OVER',canvas.width/2-150,canvas.height/2);
+    ctx.fillText(`Score: ${score}`,canvas.width/2-80,canvas.height/2+60);
     return;
   }
 
@@ -179,9 +241,14 @@ function gameLoop() {
   drawPerimeter();
   updatePlayer();
   drawPlayer();
-  if(Math.random()<0.02) spawnBot();
+
+  if(botSpawnTimer<=0){spawnBot();botSpawnTimer=50;} else botSpawnTimer--;
+  if(discSpawnTimer<=0){spawnDisc();discSpawnTimer=200;} else discSpawnTimer--;
+
   updateBots();
   drawBots();
+  updateDiscs();
+  drawDiscs();
   checkCollisions();
   drawScore();
   score++;
