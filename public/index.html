@@ -2,7 +2,7 @@
 <html>
 <head>
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"/>
-  <title>Digibike Royale (mobile)</title>
+  <title>Digibike Royale (Colyseus prototype)</title>
   <style>
     html,body{height:100%;margin:0;background:#000;color:#fff;font-family:monospace}
     canvas{display:block;touch-action:none}
@@ -18,136 +18,7 @@
     <div id="status">Not connected</div>
   </div>
   <canvas id="c"></canvas>
-
-  <script src="/socket.io/socket.io.js"></script>
-  <script>
-  const socket = io();
-  const canvas = document.getElementById('c');
-  const ctx = canvas.getContext('2d');
-  let W=canvas.width = window.innerWidth;
-  let H=canvas.height = window.innerHeight;
-  window.addEventListener('resize', ()=>{W=canvas.width=window.innerWidth;H=canvas.height=window.innerHeight;});
-
-  const nameInput = document.getElementById('name');
-  const queueBtn = document.getElementById('queueBtn');
-  const status = document.getElementById('status');
-
-  let myId = null;
-  let gameState = null;
-  let inMatch = false;
-  let localPlayerId = null;
-
-  queueBtn.onclick = ()=>{
-    if(!inMatch){
-      socket.emit('joinQueue', { name: nameInput.value });
-      queueBtn.innerText = 'Leave Queue';
-      status.innerText = 'Queued...';
-    } else {
-      socket.emit('leaveQueue');
-      queueBtn.innerText = 'Join Queue';
-      status.innerText = 'Left queue';
-    }
-    inMatch = !inMatch;
-  };
-
-  socket.on('connect', ()=>{ status.innerText = 'Connected'; });
-  socket.on('queueUpdate', (d)=>{ status.innerText = `Queue pos: ${d.pos || '?'} / ${d.total || '?'}`; });
-  socket.on('matchStart', d => {
-    status.innerText = 'Match starting...';
-    localPlayerId = d.id;
-  });
-  socket.on('matchCountdown', d => {
-    status.innerText = `Starting in ${d.seconds}...`;
-  });
-
-  socket.on('state', s => {
-    gameState = s;
-    if(s.ended){
-      status.innerText = 'Match ended';
-      setTimeout(()=>{ status.innerText = 'Join queue again to play'; }, 1200);
-    }
-  });
-
-  // Mobile tapping -> send direction
-  function handleTap(clientX, clientY){
-    if(!gameState || !gameState.players || !localPlayerId) return;
-    const players = gameState.players;
-    const me = players[localPlayerId];
-    if(!me || !me.alive) return;
-    // player screen position (we render world scaled to fit screen)
-    // For simplicity assume 1:1 coord mapping and center camera on player.
-    const worldW = 1200, worldH = 800;
-    const camX = me.x - W/2;
-    const camY = me.y - H/2;
-    const worldTapX = camX + clientX;
-    const worldTapY = camY + clientY;
-    const dx = worldTapX - me.x;
-    const dy = worldTapY - me.y;
-    // choose cardinal direction nearest
-    if(Math.abs(dx) > Math.abs(dy)){
-      socket.emit('turn', { dir: dx > 0 ? 'right' : 'left' });
-    } else {
-      socket.emit('turn', { dir: dy > 0 ? 'down' : 'up' });
-    }
-  }
-
-  canvas.addEventListener('touchstart', e=>{
-    e.preventDefault();
-    const t = e.touches[0];
-    handleTap(t.clientX, t.clientY);
-  }, {passive:false});
-
-  canvas.addEventListener('mousedown', e=>{
-    handleTap(e.clientX, e.clientY);
-  });
-
-  // Rendering loop (client-side interpolation not implemented — simple render)
-  function draw(){
-    ctx.fillStyle = '#000';
-    ctx.fillRect(0,0,W,H);
-    if(!gameState || !gameState.players) {
-      ctx.fillStyle='white'; ctx.fillText('Waiting for match...', 20, 40);
-      requestAnimationFrame(draw); return;
-    }
-    const players = gameState.players;
-    // find local player for camera center
-    const me = players[localPlayerId] || Object.values(players)[0];
-    const camX = me ? me.x - W/2 : 0;
-    const camY = me ? me.y - H/2 : 0;
-
-    // draw trails
-    for(const id in players){
-      const p = players[id];
-      if(!p) continue;
-      // trail
-      ctx.fillStyle = p.color;
-      for(const pt of p.trail){
-        ctx.fillRect(pt.x - camX - 2, pt.y - camY - 2, 4, 4);
-      }
-    }
-    // draw players
-    for(const id in players){
-      const p = players[id];
-      if(!p) continue;
-      if(!p.alive) continue;
-      ctx.fillStyle = p.color;
-      ctx.fillRect(p.x - camX - 8, p.y - camY - 8, 16, 16);
-      ctx.fillStyle = '#fff';
-      ctx.font = '14px monospace';
-      ctx.fillText(p.name, p.x - camX - ctx.measureText(p.name).width/2, p.y - camY - 12);
-    }
-
-    // HUD
-    ctx.fillStyle='rgba(0,0,0,0.6)';
-    ctx.fillRect(8, H-56, 180, 48);
-    ctx.fillStyle='white';
-    const alive = Object.values(players).filter(p=>p.alive).length;
-    ctx.fillText(`Alive: ${alive}`, 16, H-36);
-    ctx.fillText(`You: ${me ? me.name : '---'}`, 16, H-18);
-
-    requestAnimationFrame(draw);
-  }
-  draw();
-  </script>
+  <script src="https://unpkg.com/colyseus.js@0.15.0/dist/colyseus.js"></script>
+  <script src="/client.js"></script>
 </body>
 </html>
