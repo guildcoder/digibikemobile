@@ -3,16 +3,10 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Mini Temple Run with Discs</title>
+<title>LIGHTRUNNER</title>
 <style>
-  body {
-    margin: 0;
-    overflow: hidden;
-    background-color: #87CEEB; /* Sky */
-  }
-  canvas {
-    display: block;
-  }
+  body { margin:0; overflow:hidden; background:black; }
+  canvas { display:block; }
 </style>
 </head>
 <body>
@@ -24,192 +18,176 @@ const ctx = canvas.getContext('2d');
 canvas.width = window.innerWidth;
 canvas.height = window.innerHeight;
 
-const laneCount = 3;
-const laneWidth = canvas.width / laneCount;
-let player = { lane: 1, width: 50, height: 50, y: canvas.height * 0.8, color: 'red', discs: 0 };
+const player = {
+  x: canvas.width / 2,
+  y: canvas.height * 0.7,
+  size: 15,
+  color: 'cyan',
+  trail: [],
+  speed: 6,
+  direction: { x: 0, y: 0 }
+};
 
-let obstacles = [];
-let discsOnGround = [];
-let flyingDiscs = [];
-let obstacleSpeed = 6;
-let discSpeed = 15;
+let bots = [];
+let botSpeed = 4;
+let botTrailLength = 20;
 let score = 0;
 let gameOver = false;
+const perimeter = 50; // red walls thickness
 
-function createObstacle() {
-  const lane = Math.floor(Math.random() * laneCount);
-  obstacles.push({ lane, width: 50, height: 50, y: -50, color: 'green' });
+// Input
+let keys = {};
+document.addEventListener('keydown', e => keys[e.key] = true);
+document.addEventListener('keyup', e => keys[e.key] = false);
+
+// Helpers
+function drawGrid() {
+  // Ground grid (tilted perspective)
+  ctx.strokeStyle = 'lime';
+  ctx.lineWidth = 1;
+  const horizon = canvas.height * 0.4;
+
+  // vertical lines converging
+  for (let i=0; i<canvas.width; i+=50){
+    ctx.beginPath();
+    ctx.moveTo(i, canvas.height);
+    ctx.lineTo(canvas.width/2 + (i-canvas.width/2)*0.3, horizon);
+    ctx.stroke();
+  }
+
+  // horizontal lines
+  for (let j=0; j<canvas.height-horizon; j+=50){
+    const y = canvas.height - j;
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    ctx.lineTo(canvas.width, y);
+    ctx.stroke();
+  }
+
+  // Vertical sky lines
+  ctx.strokeStyle = '#0ff';
+  for (let i=0;i<canvas.width;i+=100){
+    ctx.beginPath();
+    ctx.moveTo(i,0);
+    ctx.lineTo(i,horizon);
+    ctx.stroke();
+  }
 }
 
-function createDisc() {
-  const lane = Math.floor(Math.random() * laneCount);
-  discsOnGround.push({ lane, width: 30, height: 10, y: -30, color: 'gold' });
+function drawPerimeter() {
+  ctx.fillStyle = 'red';
+  ctx.fillRect(0,0,canvas.width,perimeter); // top
+  ctx.fillRect(0,canvas.height-perimeter,canvas.width,perimeter); // bottom
+  ctx.fillRect(0,0,perimeter,canvas.height); // left
+  ctx.fillRect(canvas.width-perimeter,0,perimeter,canvas.height); // right
 }
 
-function drawGround() {
-  ctx.fillStyle = '#228B22';
-  ctx.fillRect(0, canvas.height * 0.8 + player.height, canvas.width, canvas.height - (canvas.height * 0.8 + player.height));
+function updatePlayer() {
+  if (keys['ArrowUp']) player.y -= player.speed;
+  if (keys['ArrowDown']) player.y += player.speed;
+  if (keys['ArrowLeft']) player.x -= player.speed;
+  if (keys['ArrowRight']) player.x += player.speed;
+
+  // Keep inside perimeter
+  player.x = Math.max(perimeter, Math.min(canvas.width - perimeter, player.x));
+  player.y = Math.max(perimeter, Math.min(canvas.height - perimeter, player.y));
+
+  // Add to trail
+  player.trail.push({x:player.x, y:player.y});
+  if (player.trail.length > 50) player.trail.shift();
 }
 
 function drawPlayer() {
-  const x = player.lane * laneWidth + (laneWidth - player.width) / 2;
+  // trail
+  for (let i=0;i<player.trail.length;i++){
+    const t = player.trail[i];
+    ctx.fillStyle = `rgba(0,255,255,${i/player.trail.length})`;
+    ctx.fillRect(t.x-5, t.y-5, player.size, player.size);
+  }
+  // bike
   ctx.fillStyle = player.color;
-  ctx.fillRect(x, player.y, player.width, player.height);
+  ctx.fillRect(player.x-player.size/2, player.y-player.size/2, player.size, player.size);
 }
 
-function drawObstacles() {
-  obstacles.forEach(obs => {
-    const x = obs.lane * laneWidth + (laneWidth - obs.width) / 2;
-    ctx.fillStyle = obs.color;
-    ctx.fillRect(x, obs.y, obs.width, obs.height);
+function spawnBot() {
+  const side = Math.floor(Math.random()*4);
+  let x,y;
+  if(side===0){x=perimeter+10; y=Math.random()*(canvas.height-2*perimeter)+perimeter;}
+  if(side===1){x=canvas.width-perimeter-10; y=Math.random()*(canvas.height-2*perimeter)+perimeter;}
+  if(side===2){y=perimeter+10; x=Math.random()*(canvas.width-2*perimeter)+perimeter;}
+  if(side===3){y=canvas.height-perimeter-10; x=Math.random()*(canvas.width-2*perimeter)+perimeter;}
+  bots.push({x,y,size:15,color:'magenta',trail:[],target:player});
+}
+
+function updateBots() {
+  bots.forEach(bot=>{
+    // simple AI: move toward player
+    const dx = bot.target.x - bot.x;
+    const dy = bot.target.y - bot.y;
+    const dist = Math.sqrt(dx*dx + dy*dy);
+    bot.x += (dx/dist)*botSpeed;
+    bot.y += (dy/dist)*botSpeed;
+
+    // trail
+    bot.trail.push({x:bot.x, y:bot.y});
+    if(bot.trail.length>botTrailLength) bot.trail.shift();
   });
+
+  // remove bots that are past the player
+  bots = bots.filter(bot => bot.y < canvas.height);
 }
 
-function drawDiscsOnGround() {
-  discsOnGround.forEach(d => {
-    const x = d.lane * laneWidth + (laneWidth - d.width) / 2;
-    ctx.fillStyle = d.color;
-    ctx.fillRect(x, d.y, d.width, d.height);
-  });
-}
-
-function drawFlyingDiscs() {
-  flyingDiscs.forEach(d => {
-    ctx.fillStyle = 'orange';
-    ctx.beginPath();
-    ctx.arc(d.x, d.y, 15, 0, Math.PI * 2);
-    ctx.fill();
-  });
-}
-
-function updateObstacles() {
-  obstacles.forEach(obs => obs.y += obstacleSpeed);
-  obstacles = obstacles.filter(obs => obs.y < canvas.height);
-}
-
-function updateDiscs() {
-  discsOnGround.forEach(d => d.y += obstacleSpeed);
-  discsOnGround = discsOnGround.filter(d => d.y < canvas.height);
-
-  flyingDiscs.forEach(d => {
-    d.y -= discSpeed;
-    // check collision with obstacles
-    obstacles = obstacles.filter(obs => {
-      const obsX = obs.lane * laneWidth + (laneWidth - obs.width) / 2;
-      const obsY = obs.y;
-      const obsW = obs.width;
-      const obsH = obs.height;
-
-      if (d.x > obsX && d.x < obsX + obsW && d.y > obsY && d.y < obsY + obsH) {
-        return false; // destroy obstacle
-      }
-      return true;
+function drawBots() {
+  bots.forEach(bot=>{
+    bot.trail.forEach((t,i)=>{
+      ctx.fillStyle = `rgba(255,0,255,${i/bot.trail.length})`;
+      ctx.fillRect(t.x-5,t.y-5,bot.size,bot.size);
     });
+    ctx.fillStyle = bot.color;
+    ctx.fillRect(bot.x-bot.size/2, bot.y-bot.size/2, bot.size, bot.size);
   });
-  flyingDiscs = flyingDiscs.filter(d => d.y > 0);
 }
 
-function checkCollision() {
-  const playerX = player.lane * laneWidth + (laneWidth - player.width) / 2;
-  const playerY = player.y;
-  const playerW = player.width;
-  const playerH = player.height;
-
-  // Check collision with obstacles
-  for (let obs of obstacles) {
-    const obsX = obs.lane * laneWidth + (laneWidth - obs.width) / 2;
-    const obsY = obs.y;
-    const obsW = obs.width;
-    const obsH = obs.height;
-
-    if (
-      playerX < obsX + obsW &&
-      playerX + playerW > obsX &&
-      playerY < obsY + obsH &&
-      playerY + playerH > obsY
-    ) {
+function checkCollisions() {
+  bots.forEach(bot=>{
+    const dx = player.x - bot.x;
+    const dy = player.y - bot.y;
+    const dist = Math.sqrt(dx*dx + dy*dy);
+    if(dist < player.size){
       gameOver = true;
     }
-  }
-
-  // Check collision with discs
-  discsOnGround = discsOnGround.filter(d => {
-    const discX = d.lane * laneWidth + (laneWidth - d.width) / 2;
-    const discY = d.y;
-    const discW = d.width;
-    const discH = d.height;
-
-    if (
-      playerX < discX + discW &&
-      playerX + playerW > discX &&
-      playerY < discY + discH &&
-      playerY + playerH > discY
-    ) {
-      player.discs++;
-      return false;
-    }
-    return true;
   });
 }
 
 function drawScore() {
-  ctx.fillStyle = 'white';
-  ctx.font = '24px Arial';
-  ctx.fillText('Score: ' + score + '  |  Discs: ' + player.discs, 20, 40);
+  ctx.fillStyle='white';
+  ctx.font='24px Arial';
+  ctx.fillText(`Score: ${score}`,20,40);
 }
 
 function gameLoop() {
-  if (gameOver) {
-    ctx.fillStyle = 'white';
-    ctx.font = '48px Arial';
-    ctx.fillText('GAME OVER', canvas.width / 2 - 150, canvas.height / 2);
-    ctx.fillText('Score: ' + score, canvas.width / 2 - 80, canvas.height / 2 + 60);
+  if(gameOver){
+    ctx.fillStyle='white';
+    ctx.font='48px Arial';
+    ctx.fillText('GAME OVER', canvas.width/2-150, canvas.height/2);
+    ctx.fillText(`Score: ${score}`, canvas.width/2-80, canvas.height/2+60);
     return;
   }
 
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-  drawGround();
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  drawGrid();
+  drawPerimeter();
+  updatePlayer();
   drawPlayer();
-  drawObstacles();
-  drawDiscsOnGround();
-  drawFlyingDiscs();
+  if(Math.random()<0.02) spawnBot();
+  updateBots();
+  drawBots();
+  checkCollisions();
   drawScore();
-
-  updateObstacles();
-  updateDiscs();
-  checkCollision();
-
-  if (Math.random() < 0.02) createObstacle();
-  if (Math.random() < 0.005) createDisc();
-
   score++;
+
   requestAnimationFrame(gameLoop);
 }
-
-// Tap to move left/right
-canvas.addEventListener('click', (e) => {
-  const clickX = e.clientX;
-  if (clickX < canvas.width / 2 && player.lane > 0) {
-    player.lane--;
-  } else if (clickX >= canvas.width / 2 && player.lane < laneCount - 1) {
-    player.lane++;
-  }
-});
-
-// Double-tap to throw a disc
-let lastTap = 0;
-canvas.addEventListener('click', (e) => {
-  const now = Date.now();
-  const delta = now - lastTap;
-  if (delta < 300 && player.discs > 0) {
-    // throw disc from player's lane
-    const discX = player.lane * laneWidth + laneWidth / 2;
-    const discY = player.y;
-    flyingDiscs.push({ x: discX, y: discY });
-    player.discs--;
-  }
-  lastTap = now;
-});
 
 gameLoop();
 </script>
